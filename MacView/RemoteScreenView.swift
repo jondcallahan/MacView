@@ -44,12 +44,13 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     private lazy var rightClickTap = UITapGestureRecognizer(target: self, action: #selector(handleRightClick(_:)))
     private lazy var pointerRightClick = UITapGestureRecognizer(target: self, action: #selector(handlePointerRightClick(_:)))
     private lazy var hover = UIHoverGestureRecognizer(target: self, action: #selector(handleHover(_:)))
+    private lazy var zoomPinch = UIPinchGestureRecognizer(target: self, action: #selector(handleZoomPinch(_:)))
     // View-mode gestures
     private lazy var zoomTap = UITapGestureRecognizer(target: self, action: #selector(handleZoomTap(_:)))
     private lazy var focusTap = UITapGestureRecognizer(target: self, action: #selector(handleFocusTap(_:)))
 
     private var mouseGestures: [UIGestureRecognizer] {
-        [movePan, scrollPan, dragPress, clickTap, rightClickTap, pointerRightClick, hover]
+        [movePan, scrollPan, zoomPinch, dragPress, clickTap, rightClickTap, pointerRightClick, hover]
     }
 
     private let clickFeedback = UIImpactFeedbackGenerator(style: .light)
@@ -61,6 +62,11 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     private var lastPanTranslation = CGPoint.zero
     private var lastDragLocation = CGPoint.zero
     private var scrollRemainder = CGPoint.zero
+    /// What a two-finger gesture in Mouse mode turned out to be. It's decided once, early,
+    /// so scrolling the Mac and zooming the view never happen at the same time.
+    private enum TwoFingerIntent { case undecided, scroll, zoom }
+    private var twoFingerIntent = TwoFingerIntent.undecided
+    private var zoomBase: CGFloat = 1
     private var lastTouchWasPointer = false
 
     init(model: SessionModel) {
@@ -252,6 +258,9 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         focusTap.isEnabled = !isMouse
         // In mouse mode, one finger drives the pointer, so the view follows the pointer instead of panning.
         scrollView.panGestureRecognizer.isEnabled = !isMouse
+        // Zooming in mouse mode goes through `zoomPinch`, which waits to see if two fingers mean scroll.
+        scrollView.pinchGestureRecognizer?.isEnabled = !isMouse
+        scrollView.bounces = !isMouse
         if isMouse {
             model.mouseMove(to: cursorPosition)
             keepCursorVisible(animated: true)
@@ -309,9 +318,9 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-        // Two-finger scrolling and pinch-to-zoom can happen together.
-        (gestureRecognizer === scrollPan && other === scrollView.pinchGestureRecognizer)
-            || (other === scrollPan && gestureRecognizer === scrollView.pinchGestureRecognizer)
+        // Both see every two-finger gesture, and `twoFingerIntent` decides which one acts.
+        (gestureRecognizer === scrollPan && other === zoomPinch)
+            || (other === scrollPan && gestureRecognizer === zoomPinch)
             || gestureRecognizer === hover || other === hover
     }
 
@@ -422,12 +431,18 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
             scrollRemainder = .zero
             lastPanTranslation = .zero
         case .changed:
-            // Ignore scrolling while the user is clearly pinching.
-            if scrollView.pinchGestureRecognizer?.state == .changed,
-               abs(scrollView.pinchGestureRecognizer?.velocity ?? 0) > 0.3 {
+            let translation = gesture.translation(in: self)
+            if twoFingerIntent == .undecided {
+                if isPinching {
+                    twoFingerIntent = .zoom
+                } else if hypot(translation.x, translation.y) > 10 {
+                    twoFingerIntent = .scroll
+                }
+            }
+            guard twoFingerIntent == .scroll else {
+                lastPanTranslation = translation
                 return
             }
-            let translation = gesture.translation(in: self)
             scrollRemainder.x += translation.x - lastPanTranslation.x
             scrollRemainder.y += translation.y - lastPanTranslation.y
             lastPanTranslation = translation
@@ -444,8 +459,45 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
                 scrollRemainder.x -= CGFloat(horizontal) * stepSize
             }
         default:
-            break
+            twoFingerGestureEnded()
         }
+    }
+
+    /// The fingers have spread or closed enough that this is a pinch, not a scroll.
+    private var isPinching: Bool {
+        (zoomPinch.state == .began || zoomPinch.state == .changed) && abs(zoomPinch.scale - 1) > 0.12
+    }
+
+    @objc private func handleZoomPinch(_ gesture: UIPinchGestureRecognizer) {
+        switch gesture.state {
+        case .began, .changed:
+            if twoFingerIntent == .undecided, isPinching {
+                twoFingerIntent = .zoom
+                // Start from the current zoom so the view doesn't jump by the threshold.
+                zoomBase = scrollView.zoomScale / gesture.scale
+            }
+            // One finger left means the pinch is ending, and its centroid jumps. Skip that frame.
+            guard twoFingerIntent == .zoom, gesture.numberOfTouches != 1 else { return }
+            zoom(to: zoomBase * gesture.scale, keeping: gesture.location(in: self))
+        default:
+            twoFingerGestureEnded()
+        }
+    }
+
+    private func twoFingerGestureEnded() {
+        let active: [UIGestureRecognizer.State] = [.began, .changed]
+        if !active.contains(scrollPan.state), !active.contains(zoomPinch.state) {
+            twoFingerIntent = .undecided
+        }
+    }
+
+    /// Zooms the view, keeping the point under the fingers where it is.
+    private func zoom(to scale: CGFloat, keeping centroid: CGPoint) {
+        let anchor = screenView.convert(centroid, from: self)
+        let scale = min(max(scale, scrollView.minimumZoomScale), scrollView.maximumZoomScale)
+        scrollView.zoomScale = scale
+        scrollView.contentOffset = clampedOffset(CGPoint(x: anchor.x * scale - centroid.x,
+                                                         y: anchor.y * scale - centroid.y))
     }
 
     private func keepCursorVisible(animated: Bool) {
@@ -468,12 +520,18 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         if point.y > visible.maxY { offset.y += point.y - visible.maxY }
         else if point.y < visible.minY { offset.y -= visible.minY - point.y }
 
-        let inset = scrollView.contentInset
-        offset.x = min(max(offset.x, -inset.left), max(-inset.left, scrollView.contentSize.width - scrollView.bounds.width + inset.right))
-        offset.y = min(max(offset.y, -inset.top), max(-inset.top, scrollView.contentSize.height - scrollView.bounds.height + inset.bottom))
+        offset = clampedOffset(offset)
         if offset != scrollView.contentOffset {
             scrollView.setContentOffset(offset, animated: animated)
         }
+    }
+
+    /// Limits a content offset to what the scroll view could reach by scrolling.
+    private func clampedOffset(_ offset: CGPoint) -> CGPoint {
+        let inset = scrollView.contentInset
+        return CGPoint(
+            x: min(max(offset.x, -inset.left), max(-inset.left, scrollView.contentSize.width - scrollView.bounds.width + inset.right)),
+            y: min(max(offset.y, -inset.top), max(-inset.top, scrollView.contentSize.height - scrollView.bounds.height + inset.bottom)))
     }
 
     // MARK: Pointer
