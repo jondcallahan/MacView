@@ -9,7 +9,7 @@ MacView connects your iPhone or iPad directly to your own Macs. It has no accoun
 - **Your list of Macs:** each Mac's name, local and Tailscale addresses, port and username. These are kept in the app's own storage on your device, and are included in your device backups like other app settings.
 - **Your Mac passwords:** stored in the iOS Keychain, readable only while your device is unlocked. They stay on this device, so they never sync to iCloud and aren't moved to a new device.
 
-Deleting a Mac from the list deletes its saved password. Deleting MacView deletes everything it stored.
+Deleting a Mac from the list deletes its saved password. Deleting MacView deletes your list of Macs, but iOS may keep the saved passwords in the Keychain. MacView removes them the next time you add a Mac after reinstalling. To remove them right away, delete your Macs in MacView before you delete the app.
 
 ## What MacView sends, and where
 
@@ -19,6 +19,8 @@ Deleting a Mac from the list deletes its saved password. Deleting MacView delete
 ## Security
 
 When you sign in, your password is encrypted on its way to the Mac. After that, VNC doesn't encrypt the session, and it can't confirm that you've reached your own Mac. On a network you don't trust, connect through Tailscale or another VPN.
+
+If a Mac has both a local and a Tailscale address, MacView uses the local one whenever something answers there. To always connect through Tailscale, leave the Mac's Local address empty.
 
 ## Questions
 

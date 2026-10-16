@@ -29,7 +29,20 @@ struct Modifiers: OptionSet, Hashable {
 
 struct CredentialRequest {
     let needsUsername: Bool
+    /// The user's answer. Nil means they cancelled.
     let completion: (VNCCredential?) -> Void
+    /// Tells RoyalVNCKit nobody will answer, when the session ends with the prompt still up.
+    let abandon: () -> Void
+}
+
+/// RoyalVNCKit waits on its credential callback, which must run exactly once.
+private final class AnswerOnce {
+    private var answered = false
+    func claim() -> Bool {
+        guard !answered else { return false }
+        answered = true
+        return true
+    }
 }
 
 @MainActor
@@ -143,11 +156,14 @@ final class SessionModel {
     }
 
     /// Without a session there's nothing to type into. The key row and the keyboard toggle are
-    /// gone too, so the keyboard would cover the error screen with no way to close it.
+    /// gone too, so the keyboard would cover the error screen with no way to close it. A sign-in
+    /// prompt still waiting for an answer is answered for the library, so it doesn't wait forever.
     private func endInput() {
         isKeyboardActive = false
         latchedModifiers = []
+        let pending = credentialRequest
         credentialRequest = nil
+        pending?.abandon()
     }
 
     fileprivate func stateChanged(_ state: VNCConnection.ConnectionState) {
@@ -197,11 +213,16 @@ final class SessionModel {
             completion(credential(for: type, username: host.username, password: saved))
             return
         }
-        credentialRequest = CredentialRequest(needsUsername: type.requiresUsername) { [weak self] credential in
+        let once = AnswerOnce()
+        credentialRequest = CredentialRequest(needsUsername: type.requiresUsername, completion: { [weak self] credential in
+            guard once.claim() else { return }
             if credential == nil { self?.cancelledSignIn = true }
             completion(credential)
             self?.credentialRequest = nil
-        }
+        }, abandon: {
+            // Not a user cancel, so the session keeps its real ending.
+            if once.claim() { completion(nil) }
+        })
     }
 
     func credential(for type: VNCAuthenticationType, username: String, password: String) -> VNCCredential {

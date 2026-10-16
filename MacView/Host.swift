@@ -48,13 +48,26 @@ final class HostStore {
     private let defaultsKey = "hosts"
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: defaultsKey),
-           let saved = try? JSONDecoder().decode([Host].self, from: data) {
-            hosts = saved
-        }
+        loadIfEmpty()
+    }
+
+    /// iOS can launch the app before the device's first unlock, when UserDefaults reads as empty.
+    /// Loading again once the app is in use keeps that empty list from replacing the saved one.
+    func loadIfEmpty() {
+        guard hosts.isEmpty,
+              let data = UserDefaults.standard.data(forKey: defaultsKey),
+              let saved = try? JSONDecoder().decode([Host].self, from: data) else { return }
+        hosts = saved
     }
 
     func save(_ host: Host, password: String?) {
+        loadIfEmpty()
+        // The first save on this install. iOS can keep Keychain items after an app is deleted,
+        // so remove any passwords an earlier install left behind. This waits until now, rather
+        // than launch, because a launch before the device's first unlock can't read the list.
+        if UserDefaults.standard.object(forKey: defaultsKey) == nil {
+            Keychain.deleteAllPasswords()
+        }
         if let index = hosts.firstIndex(where: { $0.id == host.id }) {
             hosts[index] = host
         } else {
@@ -113,5 +126,12 @@ enum Keychain {
 
     static func deletePassword(for id: UUID) {
         SecItemDelete(query(for: id) as CFDictionary)
+    }
+
+    static func deleteAllPasswords() {
+        SecItemDelete([
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+        ] as CFDictionary)
     }
 }
