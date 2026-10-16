@@ -21,6 +21,7 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_rfb._tcp</string>
+		<string>_device-info._tcp</string>
 	</array>
 </dict>
 </plist>

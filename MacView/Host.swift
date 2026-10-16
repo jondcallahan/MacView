@@ -11,12 +11,15 @@ struct Host: Identifiable, Codable, Hashable {
     var remoteAddress: String = ""
     var port: UInt16 = 5900
     var username: String = ""
+    /// The Mac's model identifier, such as "Macmini9,1", learned from Bonjour. It picks the icon.
+    var model: String?
 
-    init(name: String, address: String, remoteAddress: String = "", port: UInt16 = 5900) {
+    init(name: String, address: String, remoteAddress: String = "", port: UInt16 = 5900, model: String? = nil) {
         self.name = name
         self.address = address
         self.remoteAddress = remoteAddress
         self.port = port
+        self.model = model
     }
 
     init(from decoder: Decoder) throws {
@@ -27,6 +30,7 @@ struct Host: Identifiable, Codable, Hashable {
         remoteAddress = try container.decodeIfPresent(String.self, forKey: .remoteAddress) ?? ""
         port = try container.decode(UInt16.self, forKey: .port)
         username = try container.decode(String.self, forKey: .username)
+        model = try container.decodeIfPresent(String.self, forKey: .model)
     }
 
     var displayName: String {
@@ -76,6 +80,13 @@ final class HostStore {
         if let password {
             Keychain.setPassword(password, for: host.id)
         }
+        persist()
+    }
+
+    /// Remembers a saved Mac's model, so its icon stays right away from home.
+    func setModel(_ model: String, for id: UUID) {
+        guard let index = hosts.firstIndex(where: { $0.id == id }), hosts[index].model != model else { return }
+        hosts[index].model = model
         persist()
     }
 

@@ -9,6 +9,8 @@ struct DiscoveredMac: Identifiable, Hashable {
     /// Its local host name, such as `Studio.local`.
     let hostName: String
     let port: UInt16
+    /// The model identifier, such as "Macmini9,1", once the Mac's device info arrives.
+    var model: String?
 }
 
 /// Finds Macs on the local network that have Screen Sharing on. They advertise `_rfb._tcp`.
@@ -19,6 +21,7 @@ final class MacBrowser {
 
     @ObservationIgnored private var browser: NWBrowser?
     @ObservationIgnored private var resolvers: [String: Resolver] = [:]
+    @ObservationIgnored private var deviceInfo: [String: DeviceInfoMonitor] = [:]
 
     func start() {
         guard browser == nil else { return }
@@ -35,6 +38,8 @@ final class MacBrowser {
         browser = nil
         resolvers.values.forEach { $0.stop() }
         resolvers = [:]
+        deviceInfo.values.forEach { $0.stop() }
+        deviceInfo = [:]
     }
 
     /// The discovered Mac a saved host points at, if it's on this network now.
@@ -64,6 +69,9 @@ final class MacBrowser {
         for name in resolvers.keys where !names.contains(name) {
             resolvers.removeValue(forKey: name)?.stop()
         }
+        for name in deviceInfo.keys where !names.contains(name) {
+            deviceInfo.removeValue(forKey: name)?.stop()
+        }
     }
 
     private func resolved(_ mac: DiscoveredMac) {
@@ -71,6 +79,10 @@ final class MacBrowser {
         guard !macs.contains(where: { $0.name == mac.name }) else { return }
         macs.append(mac)
         macs.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        deviceInfo[mac.name] = DeviceInfoMonitor(name: mac.name) { [weak self] model in
+            guard let index = self?.macs.firstIndex(where: { $0.name == mac.name }) else { return }
+            self?.macs[index].model = model
+        }
     }
 }
 
@@ -100,5 +112,32 @@ private final class Resolver: NSObject, NetServiceDelegate {
         let port = UInt16(sender.port)
         stop()
         MainActor.assumeIsolated { completion(hostName, port) }
+    }
+}
+
+/// Reads a Mac's model from its `_device-info._tcp` record. macOS publishes this record under
+/// the computer's name without advertising it for browsing, so it has to be asked for by name.
+private final class DeviceInfoMonitor: NSObject, NetServiceDelegate {
+    private let service: NetService
+    private let completion: @MainActor (String) -> Void
+
+    init(name: String, completion: @escaping @MainActor (String) -> Void) {
+        service = NetService(domain: "local.", type: "_device-info._tcp.", name: name)
+        self.completion = completion
+        super.init()
+        service.delegate = self
+        service.startMonitoring()
+    }
+
+    func stop() {
+        service.delegate = nil
+        service.stopMonitoring()
+    }
+
+    func netService(_ sender: NetService, didUpdateTXTRecord data: Data) {
+        guard let value = NetService.dictionary(fromTXTRecord: data)["model"],
+              let model = String(data: value, encoding: .utf8), !model.isEmpty else { return }
+        stop()
+        MainActor.assumeIsolated { completion(model) }
     }
 }

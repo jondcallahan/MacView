@@ -49,7 +49,7 @@ struct HostListView: View {
                             Section {
                                 ForEach(newMacs) { mac in
                                     Button {
-                                        editingHost = Host(name: mac.name, address: mac.hostName, port: mac.port)
+                                        editingHost = Host(name: mac.name, address: mac.hostName, port: mac.port, model: mac.model)
                                     } label: {
                                         DiscoveredRow(mac: mac)
                                     }
@@ -89,6 +89,11 @@ struct HostListView: View {
                 SessionView(host: host)
             }
             .onAppear { browser.start() }
+            .onChange(of: browser.macs) {
+                for host in store.hosts {
+                    if let model = browser.mac(matching: host)?.model { store.setModel(model, for: host.id) }
+                }
+            }
             .onDisappear { browser.stop() }
         }
     }
@@ -106,7 +111,7 @@ private struct HostRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "desktopcomputer")
+            Image(systemName: MacModel.symbolName(for: host.model))
                 .font(.title2)
                 .foregroundStyle(.tint)
                 .frame(width: 36)
@@ -144,7 +149,7 @@ private struct DiscoveredRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "desktopcomputer")
+            Image(systemName: MacModel.symbolName(for: mac.model))
                 .font(.title2)
                 .foregroundStyle(.secondary)
                 .frame(width: 36)

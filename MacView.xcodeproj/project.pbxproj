@@ -17,6 +17,7 @@
 		84F6E35B8AF9B3B739FC5E13 /* Host.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6627EB44F5DA5D5D20CB32A7 /* Host.swift */; };
 		9CFB3A2698484A319D07C3B9 /* RoyalVNCKit in Frameworks */ = {isa = PBXBuildFile; productRef = 43FA4527863FB3D6EF7ADA06 /* RoyalVNCKit */; };
 		9E67B7BC335A58AB18E18368 /* KeyInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50504973B621F7543EA6440D /* KeyInputView.swift */; };
+		A5EB0179EACB5A799543329B /* MacModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 933A10F4E06E46CA9BA48793 /* MacModel.swift */; };
 		C3EEB75E40F0CB18E365C891 /* RouteFinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B9454E56C1B35138224072B /* RouteFinder.swift */; };
 		E2EE15CA21CEF64BBDFC9550 /* RemoteScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7DBE54CFD11431E9AF6C486 /* RemoteScreenView.swift */; };
 		F995B4450F3C780D4F752A1A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 257D59D59B84F6C15392C637 /* PrivacyInfo.xcprivacy */; };
@@ -46,6 +47,7 @@
 		63BC0743A5C936E1194DAF8C /* MacView.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MacView.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6627EB44F5DA5D5D20CB32A7 /* Host.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Host.swift; sourceTree = "<group>"; };
 		6B9454E56C1B35138224072B /* RouteFinder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteFinder.swift; sourceTree = "<group>"; };
+		933A10F4E06E46CA9BA48793 /* MacModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacModel.swift; sourceTree = "<group>"; };
 		B7DBE54CFD11431E9AF6C486 /* RemoteScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteScreenView.swift; sourceTree = "<group>"; };
 		B94DB8C7A6491BA4138548FC /* SessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionView.swift; sourceTree = "<group>"; };
 		C3F34442730BB58F5E78E248 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -102,6 +104,7 @@
 				C3F34442730BB58F5E78E248 /* Info.plist */,
 				50504973B621F7543EA6440D /* KeyInputView.swift */,
 				19361674E5F902761D220887 /* MacBrowser.swift */,
+				933A10F4E06E46CA9BA48793 /* MacModel.swift */,
 				21AE61C53236224B2E985A41 /* MacViewApp.swift */,
 				257D59D59B84F6C15392C637 /* PrivacyInfo.xcprivacy */,
 				B7DBE54CFD11431E9AF6C486 /* RemoteScreenView.swift */,
@@ -195,6 +198,7 @@
 				7F0F1617CC86F63B674B18F5 /* HostListView.swift in Sources */,
 				9E67B7BC335A58AB18E18368 /* KeyInputView.swift in Sources */,
 				3C63742CA3866D25B5A11662 /* MacBrowser.swift in Sources */,
+				A5EB0179EACB5A799543329B /* MacModel.swift in Sources */,
 				FA80891437369FFF07DE1D08 /* MacViewApp.swift in Sources */,
 				E2EE15CA21CEF64BBDFC9550 /* RemoteScreenView.swift in Sources */,
 				C3EEB75E40F0CB18E365C891 /* RouteFinder.swift in Sources */,

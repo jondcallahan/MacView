@@ -39,4 +39,4 @@ targets:
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        NSBonjourServices: [_rfb._tcp]
+        NSBonjourServices: [_rfb._tcp, _device-info._tcp]
