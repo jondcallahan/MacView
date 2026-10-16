@@ -5,6 +5,8 @@ struct HostListView: View {
     @State private var browser = MacBrowser()
     @State private var editingHost: Host?
     @State private var activeHost: Host?
+    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
+    @Environment(\.openWindow) private var openWindow
 
     /// Macs found on the network that aren't saved yet.
     private var newMacs: [DiscoveredMac] {
@@ -21,7 +23,7 @@ struct HostListView: View {
                         Text("Add a Mac to see and control its screen. On the Mac, turn on Screen Sharing in System Settings > General > Sharing. Macs on this network show up here by themselves.")
                     } actions: {
                         Button("Add Mac") { editingHost = Host(name: "", address: "") }
-                            .buttonStyle(.glassProminent)
+                            .glassButton(prominent: true)
                     }
                 } else {
                     List {
@@ -29,7 +31,7 @@ struct HostListView: View {
                             Section {
                                 ForEach(store.hosts) { host in
                                     Button {
-                                        activeHost = host
+                                        open(host)
                                     } label: {
                                         HostRow(host: host, isNearby: browser.mac(matching: host) != nil)
                                     }
@@ -80,6 +82,7 @@ struct HostListView: View {
                     Button("Add Mac", systemImage: "plus") {
                         editingHost = Host(name: "", address: "")
                     }
+                    .keyboardShortcut("n")
                 }
             }
             .sheet(item: $editingHost) { host in
@@ -95,6 +98,15 @@ struct HostListView: View {
                 }
             }
             .onDisappear { browser.stop() }
+        }
+    }
+
+    /// iPhone shows the Mac full screen. iPad and Vision Pro give it a window of its own.
+    private func open(_ host: Host) {
+        if supportsMultipleWindows {
+            openWindow(value: host.id)
+        } else {
+            activeHost = host
         }
     }
 }

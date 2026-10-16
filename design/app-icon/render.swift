@@ -1,6 +1,7 @@
 // Screen Door app icon: a solid laptop with an outlined iPhone in front, in white on a blue gradient.
 // swift design/app-icon/render.swift ScreenDoor/Assets.xcassets/AppIcon.appiconset/icon.png
 // Add `preview.png old-icon.png` to also write an old-vs-new comparison sheet.
+// Add `--vision DIR` instead to also write the Vision Pro icon's layers, back.png and front.png, to DIR.
 import AppKit
 
 let size: CGFloat = 1024
@@ -25,16 +26,24 @@ let art = screen.union(base).union(phone)
 let offset = CGPoint(x: (size - art.width) / 2 - art.minX, y: (size - art.height) / 2 - art.minY - 8)
 func place(_ r: CGRect) -> CGRect { r.offsetBy(dx: offset.x, dy: offset.y) }
 
-func icon() -> CGImage {
+/// The icon is a background and the artwork on top. Vision Pro shows them as separate layers.
+func icon(background: Bool = true, art: Bool = true) -> CGImage {
     let ctx = CGContext(data: nil, width: Int(size), height: Int(size), bitsPerComponent: 8, bytesPerRow: 0,
                         space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+                        bitmapInfo: (art && !background ? CGImageAlphaInfo.premultipliedLast : .noneSkipLast).rawValue)!
     ctx.translateBy(x: 0, y: size); ctx.scaleBy(x: 1, y: -1)   // y-down
+    if background { drawBackground(ctx) }
+    if art { drawArt(ctx) }
+    return ctx.makeImage()!
+}
 
+func drawBackground(_ ctx: CGContext) {
     let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
                               colors: [rgb(75, 177, 255), rgb(11, 93, 243)] as CFArray, locations: [0, 1])!
     ctx.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: size), options: [])
+}
 
+func drawArt(_ ctx: CGContext) {
     // Draw the laptop on its own layer so the phone's gap can be cut out of it.
     ctx.beginTransparencyLayer(auxiliaryInfo: nil)
     ctx.setFillColor(.white)
@@ -80,7 +89,6 @@ func icon() -> CGImage {
     let phoneInner = handset.insetBy(dx: phoneBezel, dy: phoneBezel)
     phonePath.addRoundedRect(in: phoneInner, cornerWidth: phoneRadius - phoneBezel * 0.6, cornerHeight: phoneRadius - phoneBezel * 0.6)
     ctx.addPath(phonePath); ctx.fillPath(using: .evenOdd)
-    return ctx.makeImage()!
 }
 
 func write(_ image: CGImage, to path: String) {
@@ -92,8 +100,14 @@ let out = CommandLine.arguments[1]
 let image = icon()
 write(image, to: out)
 
+if CommandLine.arguments.count > 3, CommandLine.arguments[2] == "--vision" {
+    let dir = CommandLine.arguments[3]
+    write(icon(art: false), to: dir + "/back.png")
+    write(icon(background: false), to: dir + "/front.png")
+}
+
 // Optional comparison sheet: old and new, masked, at 300 and 60 px, on light and dark.
-if CommandLine.arguments.count > 3, let old = NSImage(contentsOfFile: CommandLine.arguments[3])?
+if CommandLine.arguments.count > 3, CommandLine.arguments[2] != "--vision", let old = NSImage(contentsOfFile: CommandLine.arguments[3])?
     .cgImage(forProposedRect: nil, context: nil, hints: nil) {
     let w = 900, h = 820
     let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,

@@ -23,5 +23,10 @@
 		<string>_rfb._tcp</string>
 		<string>_device-info._tcp</string>
 	</array>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

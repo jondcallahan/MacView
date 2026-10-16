@@ -2,7 +2,7 @@
 
 Effective October 16, 2026
 
-Screen Door connects your iPhone or iPad directly to your own Macs. It has no account and no servers, and it doesn't collect, share or sell any information about you. The developer receives nothing from the app: no analytics, no crash reports and no tracking.
+Screen Door connects your iPhone, iPad or Apple Vision Pro directly to your own Macs. It has no account and no servers, and it doesn't collect, share or sell any information about you. The developer receives nothing from the app: no analytics, no crash reports and no tracking.
 
 ## What stays on your device
 

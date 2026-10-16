@@ -1,12 +1,14 @@
 # Screen Door
 
-An iPhone and iPad app for seeing and controlling your Mac's screen over VNC (macOS Screen Sharing). Built with SwiftUI, Liquid Glass and [RoyalVNCKit](https://github.com/royalapplications/royalvnc).
+An iPhone, iPad and Apple Vision Pro app for seeing and controlling your Mac's screen over VNC (macOS Screen Sharing). Built with SwiftUI, Liquid Glass and [RoyalVNCKit](https://github.com/royalapplications/royalvnc).
 
 ## Features
 
 - **Look around:** drag to pan, pinch or double-tap to zoom. Nothing is sent to the Mac.
 - **Mouse:** use the screen like a trackpad. Drag to move the pointer, tap to click, tap with two fingers to right-click, drag with two fingers to scroll, and touch and hold then drag to select. On iPad, a connected trackpad or mouse controls the pointer directly.
-- **Keyboard:** the on-screen keyboard, plus a row with esc, tab, ⌃ ⌥ ⌘ ⇧ and arrow keys. Hardware keyboards send shortcuts like ⌘C to the Mac.
+- **Vision Pro:** look at something and tap to click it. Pinch and drag to scroll. Pinch and hold, then drag to select, or let go to right-click. Each Mac's window takes the shape of its screen.
+- **Windows:** on iPad and Vision Pro, each Mac opens in its own window, so you can see several at once.
+- **Keyboard:** the on-screen keyboard, plus a row with esc, tab, ⌃ ⌥ ⌘ ⇧ and arrow keys. Hardware keyboards type on the Mac and send shortcuts like ⌘C, without opening the on-screen keyboard.
 - **Finds your Macs:** Macs with Screen Sharing on show up by themselves when you're on the same network.
 - **Home and away:** give each Mac a local address and a Tailscale (or other VPN) address. Screen Door tries the local one first and falls back to Tailscale, so it's the same Mac in the list wherever you are.
 - Sign in with your Mac account. Passwords are stored in the iOS Keychain on this device only.

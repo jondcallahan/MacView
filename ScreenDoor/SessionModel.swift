@@ -72,7 +72,8 @@ final class SessionModel {
     private(set) var status: Status = .connecting
     private(set) var step: Step = .connecting
     private(set) var framebufferSize: CGSize = .zero
-    var mode: InputMode = .view
+    /// On Vision Pro, the window is big enough to use without zooming, so it starts in Mouse mode.
+    var mode: InputMode = Platform.isVision ? .mouse : .view
     var isKeyboardActive = false
     /// Modifiers the user latched from the key row. They apply to the next key, then clear.
     var latchedModifiers: Modifiers = []

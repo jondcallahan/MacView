@@ -13,10 +13,16 @@ struct RemoteScreen: UIViewRepresentable {
         view.apply(mode: model.mode)
         view.setKeyboardActive(model.isKeyboardActive)
         view.setControlsTop(model.controlsTop)
+        // Read here, not later, so SwiftUI calls this again when they change.
+        let canTakeFocus = model.status == .connected && model.credentialRequest == nil && !model.isKeyboardActive
+        if canTakeFocus { view.claimKeyboardFocus() }
     }
 }
 
 /// Shows the Mac's screen in a zoomable scroll view and turns touches into pointer events.
+///
+/// On Vision Pro, Mouse mode points directly: you look at something and tap to click it, instead of
+/// dragging the pointer across the screen like a trackpad.
 final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegate, UIPointerInteractionDelegate {
     private let model: SessionModel
     private let scrollView = UIScrollView()
@@ -50,13 +56,15 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     private lazy var focusTap = UITapGestureRecognizer(target: self, action: #selector(handleFocusTap(_:)))
 
     private var mouseGestures: [UIGestureRecognizer] {
-        [movePan, scrollPan, zoomPinch, dragPress, clickTap, rightClickTap, pointerRightClick, hover]
+        // Pointing directly, a one-finger drag scrolls, so there's no trackpad-style pointer movement.
+        (Platform.isVision ? [] : [movePan])
+            + [scrollPan, zoomPinch, dragPress, clickTap, rightClickTap, pointerRightClick, hover]
     }
 
-    private let clickFeedback = UIImpactFeedbackGenerator(style: .light)
-    private let rightClickFeedback = UIImpactFeedbackGenerator(style: .rigid)
-    private let dragFeedback = UIImpactFeedbackGenerator(style: .medium)
-    private let edgeFeedback = UIImpactFeedbackGenerator(style: .soft)
+    private let clickFeedback = Haptic(.light)
+    private let rightClickFeedback = Haptic(.rigid)
+    private let dragFeedback = Haptic(.medium)
+    private let edgeFeedback = Haptic(.soft)
     private var isCursorAtEdge = false
 
     private var lastPanTranslation = CGPoint.zero
@@ -72,6 +80,9 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     /// Whether the Mac's pointer is the text cursor (I-beam), meaning it's over something you can type in.
     private var isTextCursor = false
     private var lastTouchWasPointer = false
+    /// Pointing directly, a touch and hold only becomes a drag once it moves. Letting go without
+    /// moving right-clicks instead.
+    private var dragStart: CGPoint?
 
     init(model: SessionModel) {
         self.model = model
@@ -156,6 +167,7 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
             positionCursorLayer()
             hasFittedOnce = false
             updateZoomLimits(refit: true)
+            matchWindowToScreen(size)
         }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -248,6 +260,17 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
                                        y: cursorPosition.y - cursorHotspot.y)
     }
 
+    /// On Vision Pro, shapes the window like the Mac's screen, with no black bars, and keeps that
+    /// shape when you resize it.
+    private func matchWindowToScreen(_ size: CGSize) {
+        #if os(visionOS)
+        guard let scene = window?.windowScene, size.width > 0, size.height > 0 else { return }
+        let width = max(bounds.width, 960)
+        scene.requestGeometryUpdate(.Vision(size: CGSize(width: width, height: width * size.height / size.width),
+                                            resizingRestrictions: .uniform))
+        #endif
+    }
+
     // MARK: Zooming
 
     private func updateZoomLimits(refit: Bool) {
@@ -334,9 +357,38 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
             if active, !self.keyInput.isFirstResponder {
                 self.keyInput.becomeFirstResponder()
             } else if !active, self.keyInput.isFirstResponder {
-                self.keyInput.resignFirstResponder()
+                _ = self.keyInput.resignFirstResponder()
+                self.claimKeyboardFocus()
             }
         }
+    }
+
+    /// While the on-screen keyboard is hidden, this view holds keyboard focus, so a hardware
+    /// keyboard on iPad or Vision Pro types on the Mac without opening it.
+    override var canBecomeFirstResponder: Bool { true }
+
+    func claimKeyboardFocus() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window != nil, self.model.status == .connected,
+                  self.model.credentialRequest == nil, !self.model.isKeyboardActive,
+                  !self.isFirstResponder, !self.keyInput.isFirstResponder else { return }
+            self.becomeFirstResponder()
+        }
+    }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let unhandled = keyInput.send(presses, down: true)
+        if !unhandled.isEmpty { super.pressesBegan(unhandled, with: event) }
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let unhandled = keyInput.send(presses, down: false)
+        if !unhandled.isEmpty { super.pressesEnded(unhandled, with: event) }
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let unhandled = keyInput.send(presses, down: false)
+        if !unhandled.isEmpty { super.pressesCancelled(unhandled, with: event) }
     }
 
     // MARK: Gestures
@@ -351,8 +403,9 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         movePan.maximumNumberOfTouches = 1
         movePan.allowedScrollTypesMask = []
 
-        scrollPan.minimumNumberOfTouches = 2
-        scrollPan.maximumNumberOfTouches = 2
+        // Pointing directly, a pinch and drag scrolls, as it does everywhere on Vision Pro.
+        scrollPan.minimumNumberOfTouches = Platform.isVision ? 1 : 2
+        scrollPan.maximumNumberOfTouches = Platform.isVision ? 1 : 2
         scrollPan.allowedScrollTypesMask = .all
 
         dragPress.minimumPressDuration = 0.35
@@ -371,10 +424,11 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        let isPointer = touch.type == .indirectPointer
+        // On Vision Pro, a tap lands where you look, so it's handled like a click from a trackpad.
+        let isPointer = touch.type == .indirectPointer || Platform.isVision
         // `buttonMaskRequired` only applies to trackpads and mice. Without this check, a plain
         // finger tap also satisfies the secondary-button recognizer and becomes a right-click.
-        if gestureRecognizer === pointerRightClick { return isPointer }
+        if gestureRecognizer === pointerRightClick { return touch.type == .indirectPointer }
         // A finger on the glass catches a flick, like on any iOS scroll view.
         stopMomentum()
         lastTouchWasPointer = isPointer
@@ -405,7 +459,7 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         cursorPosition.y = min(max(cursorPosition.y + delta.y, 0), size.height - 1)
         let atEdge = cursorPosition.x <= 0 || cursorPosition.y <= 0
             || cursorPosition.x >= size.width - 1 || cursorPosition.y >= size.height - 1
-        if atEdge, !isCursorAtEdge { edgeFeedback.impactOccurred() }
+        if atEdge, !isCursorAtEdge { edgeFeedback.play() }
         isCursorAtEdge = atEdge
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -431,10 +485,14 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
 
     @objc private func handleDrag(_ gesture: UILongPressGestureRecognizer) {
         let location = gesture.location(in: self)
+        if Platform.isVision {
+            handleDirectDrag(gesture)
+            return
+        }
         switch gesture.state {
         case .began:
             lastDragLocation = location
-            dragFeedback.impactOccurred()
+            dragFeedback.play()
             model.mouseDown(.left, at: cursorPosition)
         case .changed:
             let step = CGPoint(x: location.x - lastDragLocation.x, y: location.y - lastDragLocation.y)
@@ -442,17 +500,60 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
             moveCursor(by: pointerDelta(for: step))
             model.mouseMove(to: cursorPosition)
         default:
-            dragFeedback.impactOccurred(intensity: 0.5)
+            dragFeedback.play(intensity: 0.5)
             model.mouseUp(.left, at: cursorPosition)
         }
     }
 
+    /// Touch and hold where you look, then drag to select or move things. Hold and let go to right-click.
+    private func handleDirectDrag(_ gesture: UILongPressGestureRecognizer) {
+        let point = clampedToScreen(gesture.location(in: screenView))
+        switch gesture.state {
+        case .began:
+            dragStart = point
+            pointAt(point)
+        case .changed:
+            if let start = dragStart {
+                let distance = hypot(point.x - start.x, point.y - start.y) * scrollView.zoomScale
+                guard distance > 8 else { return }
+                dragStart = nil
+                model.mouseDown(.left, at: start)
+            }
+            pointAt(point)
+        case .ended:
+            if dragStart != nil {
+                model.click(.right, at: cursorPosition)
+            } else {
+                model.mouseUp(.left, at: cursorPosition)
+            }
+            dragStart = nil
+        default:
+            if dragStart == nil { model.mouseUp(.left, at: cursorPosition) }
+            dragStart = nil
+        }
+    }
+
+    /// Moves the Mac's pointer straight to a point on its screen.
+    private func pointAt(_ point: CGPoint) {
+        cursorPosition = point
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        positionCursorLayer()
+        CATransaction.commit()
+        model.mouseMove(to: point)
+    }
+
+    private func clampedToScreen(_ point: CGPoint) -> CGPoint {
+        let size = screenView.bounds.size
+        return CGPoint(x: min(max(point.x, 0), max(size.width - 1, 0)),
+                       y: min(max(point.y, 0), max(size.height - 1, 0)))
+    }
+
     @objc private func handleClick(_ gesture: UITapGestureRecognizer) {
         if lastTouchWasPointer {
-            cursorPosition = gesture.location(in: screenView)
-            positionCursorLayer()
+            pointAt(clampedToScreen(gesture.location(in: screenView)))
         }
-        clickFeedback.impactOccurred()
+        clickFeedback.play()
         model.click(.left, at: cursorPosition)
         setFocus(cursorPosition)
         // Clicking with the text cursor almost always means a text field. Open the keyboard for it.
@@ -473,14 +574,14 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     }
 
     @objc private func handleRightClick(_ gesture: UITapGestureRecognizer) {
-        rightClickFeedback.impactOccurred()
+        rightClickFeedback.play()
         model.click(.right, at: cursorPosition)
     }
 
     @objc private func handlePointerRightClick(_ gesture: UITapGestureRecognizer) {
         cursorPosition = gesture.location(in: screenView)
         positionCursorLayer()
-        rightClickFeedback.impactOccurred()
+        rightClickFeedback.play()
         model.click(.right, at: cursorPosition)
     }
 
@@ -500,6 +601,8 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         case .began:
             scrollRemainder = .zero
             lastPanTranslation = .zero
+            // Scroll whatever you're looking at.
+            if Platform.isVision { pointAt(clampedToScreen(gesture.location(in: screenView))) }
         case .changed:
             let translation = gesture.translation(in: self)
             if twoFingerIntent == .undecided {

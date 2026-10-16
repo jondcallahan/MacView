@@ -49,35 +49,32 @@ final class KeyInputView: UIView, UIKeyInput {
     // MARK: Hardware keyboard
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        var unhandled = Set<UIPress>()
-        for press in presses {
-            if let key = press.key, let code = Self.keyCode(for: key) {
-                model.keyDown(code)
-            } else {
-                unhandled.insert(press)
-            }
-        }
+        let unhandled = send(presses, down: true)
         if !unhandled.isEmpty { super.pressesBegan(unhandled, with: event) }
     }
 
     override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        releasePresses(presses, with: event)
+        let unhandled = send(presses, down: false)
+        if !unhandled.isEmpty { super.pressesEnded(unhandled, with: event) }
     }
 
     override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        releasePresses(presses, with: event)
+        let unhandled = send(presses, down: false)
+        if !unhandled.isEmpty { super.pressesCancelled(unhandled, with: event) }
     }
 
-    private func releasePresses(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+    /// Sends hardware key presses to the Mac and returns the ones it couldn't map.
+    /// The screen view uses this too, so a hardware keyboard works while the on-screen one is hidden.
+    func send(_ presses: Set<UIPress>, down: Bool) -> Set<UIPress> {
         var unhandled = Set<UIPress>()
         for press in presses {
             if let key = press.key, let code = Self.keyCode(for: key) {
-                model.keyUp(code)
+                down ? model.keyDown(code) : model.keyUp(code)
             } else {
                 unhandled.insert(press)
             }
         }
-        if !unhandled.isEmpty { super.pressesEnded(unhandled, with: event) }
+        return unhandled
     }
 
     /// Maps by physical key position so modifiers and shortcuts behave like on the Mac.

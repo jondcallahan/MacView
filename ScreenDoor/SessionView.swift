@@ -2,14 +2,21 @@ import SwiftUI
 import RoyalVNCKit
 
 struct SessionView: View {
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismissCover
+    /// Closes the Mac's own window on iPad and Vision Pro. Without it, the session is a full-screen cover.
+    var closeWindow: (() -> Void)?
     @State private var model: SessionModel
     @State private var hint: String?
     @State private var username = ""
     @State private var password = ""
 
-    init(host: Host) {
+    init(host: Host, closeWindow: (() -> Void)? = nil) {
         _model = State(initialValue: SessionModel(host: host))
+        self.closeWindow = closeWindow
+    }
+
+    private func dismiss() {
+        if let closeWindow { closeWindow() } else { dismissCover() }
     }
 
     var body: some View {
@@ -22,8 +29,19 @@ struct SessionView: View {
 
             statusOverlay
         }
+        #if os(visionOS)
+        // The window's own controls close it, and the session's controls sit below it.
+        .ornament(visibility: model.status == .connected ? .visible : .hidden,
+                  attachmentAnchor: .scene(.bottom), contentAlignment: .top) {
+            controls.padding(.top, 12)
+        }
+        .onChange(of: model.status) { _, status in
+            if status == .connected { showHint(Self.mouseHint) }
+        }
+        #else
         .safeAreaInset(edge: .top) { header }
         .safeAreaInset(edge: .bottom) { controls }
+        #endif
         .preferredColorScheme(.dark)
         .sensoryFeedback(.selection, trigger: model.mode)
         .sensoryFeedback(.impact(weight: .light), trigger: model.isKeyboardActive)
@@ -39,9 +57,7 @@ struct SessionView: View {
         .task { model.connect() }
         .onDisappear { model.disconnect() }
         .onChange(of: model.mode) { _, mode in
-            showHint(mode == .mouse
-                     ? "Drag to move the pointer. Tap to click. Tap with two fingers to right-click. Touch and hold, then drag to select."
-                     : "Drag to look around. Pinch or double-tap to zoom.")
+            showHint(mode == .mouse ? Self.mouseHint : Self.lookHint)
         }
         .alert("Sign in to \(model.host.displayName)", isPresented: credentialAlertBinding) {
             if model.credentialRequest?.needsUsername == true {
@@ -72,6 +88,14 @@ struct SessionView: View {
         }
     }
 
+    #if os(visionOS)
+    private static let mouseHint = "Look at something and tap to click. Pinch and drag to scroll. Pinch and hold, then drag to select, or let go to right-click."
+    private static let lookHint = "Pinch and drag to look around. Pinch with both hands to zoom."
+    #else
+    private static let mouseHint = "Drag to move the pointer. Tap to click. Tap with two fingers to right-click. Touch and hold, then drag to select."
+    private static let lookHint = "Drag to look around. Pinch or double-tap to zoom."
+    #endif
+
     private var credentialAlertBinding: Binding<Bool> {
         Binding(
             get: { model.credentialRequest != nil },
@@ -97,18 +121,22 @@ struct SessionView: View {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 8)
-            .glassEffect(.regular, in: .capsule)
+            .glass(in: .capsule)
 
             Spacer(minLength: 0)
 
-            Button("Disconnect", systemImage: "xmark") {
+            Button {
                 model.disconnect()
                 dismiss()
+            } label: {
+                Label("Disconnect", systemImage: "xmark")
+                    .labelStyle(.iconOnly)
+                    .font(.title3.weight(.semibold))
+                    .frame(width: 48, height: 48)
+                    .contentShape(.circle)
             }
-            .labelStyle(.iconOnly)
-            .font(.title3.weight(.semibold))
-            .frame(width: 48, height: 48)
-            .glassEffect(.regular.interactive(), in: .circle)
+            .buttonStyle(.plain)
+            .glass(in: .circle, interactive: true)
         }
         .padding(.horizontal)
         .padding(.top, 4)
@@ -141,9 +169,13 @@ struct SessionView: View {
                     Text(hint)
                         .font(.footnote)
                         .multilineTextAlignment(.center)
+                        #if os(visionOS)
+                        // The ornament doesn't limit its width, so keep the hint to a few short lines.
+                        .frame(width: 460)
+                        #endif
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+                        .glass(in: .rect(cornerRadius: 18))
                         .padding(.horizontal, 32)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         .onTapGesture { withAnimation { self.hint = nil } }
@@ -154,14 +186,31 @@ struct SessionView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                GlassEffectContainer(spacing: 12) {
+                GlassGroup(spacing: 12) {
                     HStack(spacing: 12) {
+                        #if os(visionOS)
+                        // Vision Pro windows have no title, so the Mac's name goes here.
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(model.host.displayName)
+                                .font(.headline)
+                            if let subtitle {
+                                Text(subtitle)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 20)
+                        .frame(height: 56)
+                        .glass(in: .capsule)
+                        #endif
                         HStack(spacing: 0) {
                             modeButton("Look around", systemImage: "hand.draw", mode: .view)
                             modeButton("Mouse", systemImage: "cursorarrow", mode: .mouse)
                         }
                         .padding(4)
-                        .glassEffect(.regular, in: .capsule)
+                        .glass(in: .capsule)
 
                         toggleButton(model.isKeyboardActive ? "Hide keyboard" : "Show keyboard",
                                      systemImage: "keyboard",
@@ -172,7 +221,10 @@ struct SessionView: View {
                 }
                 .padding(.bottom, 8)
             }
+            #if !os(visionOS)
+            // On Vision Pro the controls and keyboard float outside the window, so nothing covers the screen.
             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { model.controlsTop = $0 }
+            #endif
             .animation(.smooth, value: model.isKeyboardActive)
             .animation(.smooth, value: hint)
         }
@@ -212,7 +264,7 @@ struct SessionView: View {
                 .contentShape(.capsule)
         }
         .buttonStyle(.plain)
-        .glassEffect(isOn ? .regular.tint(.accentColor).interactive() : .regular.interactive(), in: .capsule)
+        .glass(in: .capsule, tint: isOn ? .accentColor : nil, interactive: true)
         .accessibilityLabel(title)
     }
 
@@ -240,9 +292,9 @@ struct SessionView: View {
                     .compactMap { $0 }.joined(separator: "\n\n"))
             } actions: {
                 Button("Try again") { model.connect() }
-                    .buttonStyle(.glassProminent)
+                    .glassButton(prominent: true)
                 Button("Close") { dismiss() }
-                    .buttonStyle(.glass)
+                    .glassButton()
             }
         case .signInRejected:
             ContentUnavailableView {
@@ -251,16 +303,16 @@ struct SessionView: View {
                 Text("\(model.host.displayName) didn't accept that username and password. Use the ones you log in to the Mac with.")
             } actions: {
                 Button("Try again") { model.connect() }
-                    .buttonStyle(.glassProminent)
+                    .glassButton(prominent: true)
                 Button("Close") { dismiss() }
-                    .buttonStyle(.glass)
+                    .glassButton()
             }
         case .closed:
             ContentUnavailableView {
                 Label("Disconnected", systemImage: "desktopcomputer")
             } actions: {
                 Button("Reconnect") { model.connect() }
-                    .buttonStyle(.glassProminent)
+                    .glassButton(prominent: true)
             }
         case .connected:
             EmptyView()
@@ -281,48 +333,55 @@ private struct KeyRow: View {
     let model: SessionModel
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            GlassEffectContainer(spacing: 8) {
-                HStack(spacing: 8) {
-                    key("esc", label: "Escape") { model.press(.escape) }
-                    key("tab", label: "Tab") { model.press(.tab) }
-                    modifier("⌃", label: "Control", .control)
-                    modifier("⌥", label: "Option", .option)
-                    modifier("⌘", label: "Command", .command)
-                    modifier("⇧", label: "Shift", .shift)
-                    key(systemImage: "arrow.left", label: "Left arrow") { model.press(.leftArrow) }
-                    key(systemImage: "arrow.up", label: "Up arrow") { model.press(.upArrow) }
-                    key(systemImage: "arrow.down", label: "Down arrow") { model.press(.downArrow) }
-                    key(systemImage: "arrow.right", label: "Right arrow") { model.press(.rightArrow) }
-                }
-                .padding(.horizontal)
+        #if os(visionOS)
+        // The ornament is as wide as its content, so there's nothing to scroll.
+        keys
+        #else
+        ScrollView(.horizontal, showsIndicators: false) { keys }
+            .scrollClipDisabled()
+        #endif
+    }
+
+    private var keys: some View {
+        GlassGroup(spacing: 8) {
+            HStack(spacing: 8) {
+                key("esc", label: "Escape") { model.press(.escape) }
+                key("tab", label: "Tab") { model.press(.tab) }
+                modifier("⌃", label: "Control", .control)
+                modifier("⌥", label: "Option", .option)
+                modifier("⌘", label: "Command", .command)
+                modifier("⇧", label: "Shift", .shift)
+                key(systemImage: "arrow.left", label: "Left arrow") { model.press(.leftArrow) }
+                key(systemImage: "arrow.up", label: "Up arrow") { model.press(.upArrow) }
+                key(systemImage: "arrow.down", label: "Down arrow") { model.press(.downArrow) }
+                key(systemImage: "arrow.right", label: "Right arrow") { model.press(.rightArrow) }
             }
+            .padding(.horizontal)
         }
-        .scrollClipDisabled()
     }
 
     private func key(_ title: String, label: String, action: @escaping () -> Void) -> some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptic(.light).play()
             action()
         } label: {
             Text(title).font(.callout.weight(.medium)).frame(minWidth: 44, minHeight: 40)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 4)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 12))
+        .glass(in: .rect(cornerRadius: 12), interactive: true)
         .accessibilityLabel(label)
     }
 
     private func key(systemImage: String, label: String, action: @escaping () -> Void) -> some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptic(.light).play()
             action()
         } label: {
             Image(systemName: systemImage).font(.callout.weight(.semibold)).frame(width: 44, height: 40)
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 12))
+        .glass(in: .rect(cornerRadius: 12), interactive: true)
         .accessibilityLabel(label)
     }
 
@@ -335,8 +394,7 @@ private struct KeyRow: View {
                 .foregroundStyle(isOn ? Color.white : Color.primary)
         }
         .buttonStyle(.plain)
-        .glassEffect(isOn ? .regular.tint(.accentColor).interactive() : .regular.interactive(),
-                     in: .rect(cornerRadius: 12))
+        .glass(in: .rect(cornerRadius: 12), tint: isOn ? .accentColor : nil, interactive: true)
         .accessibilityLabel(label)
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
