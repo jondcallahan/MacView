@@ -5,12 +5,40 @@ import Security
 struct Host: Identifiable, Codable, Hashable {
     var id = UUID()
     var name: String
+    /// Address on the local network, such as `studio.local`.
     var address: String
+    /// Address through Tailscale or another VPN, tried when the local address can't be reached.
+    var remoteAddress: String = ""
     var port: UInt16 = 5900
     var username: String = ""
 
+    init(name: String, address: String, remoteAddress: String = "", port: UInt16 = 5900) {
+        self.name = name
+        self.address = address
+        self.remoteAddress = remoteAddress
+        self.port = port
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        address = try container.decode(String.self, forKey: .address)
+        remoteAddress = try container.decodeIfPresent(String.self, forKey: .remoteAddress) ?? ""
+        port = try container.decode(UInt16.self, forKey: .port)
+        username = try container.decode(String.self, forKey: .username)
+    }
+
     var displayName: String {
-        name.isEmpty ? address : name
+        name.isEmpty ? (address.isEmpty ? remoteAddress : address) : name
+    }
+
+    /// Ways to reach the Mac, most preferred first.
+    var routes: [Route] {
+        var routes: [Route] = []
+        if !address.isEmpty { routes.append(Route(kind: .local, address: address)) }
+        if !remoteAddress.isEmpty { routes.append(Route(kind: .remote, address: remoteAddress)) }
+        return routes
     }
 }
 

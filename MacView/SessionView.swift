@@ -119,7 +119,8 @@ struct SessionView: View {
         case .failed, .signInRejected: "Not connected"
         case .closed: "Disconnected"
         case .connected:
-            model.mode == .mouse || model.isKeyboardActive ? "You're in control" : "Viewing"
+            (model.mode == .mouse || model.isKeyboardActive ? "You're in control" : "Viewing")
+                + (model.route?.kind == .remote ? " · via Tailscale" : "")
         }
     }
 
@@ -224,7 +225,9 @@ struct SessionView: View {
             ContentUnavailableView {
                 Label("Couldn't connect to \(model.host.displayName)", systemImage: "exclamationmark.triangle")
             } description: {
-                Text("\(message)\n\nCheck that the Mac is awake, Screen Sharing is on, and you're on the same network.")
+                Text(model.host.remoteAddress.isEmpty
+                     ? "\(message)\n\nCheck that the Mac is awake, Screen Sharing is on, and you're on the same network."
+                     : "\(message)\n\nCheck that the Mac is awake and Screen Sharing is on.")
             } actions: {
                 Button("Try again") { model.connect() }
                     .buttonStyle(.glassProminent)

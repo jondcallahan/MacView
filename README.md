@@ -7,6 +7,8 @@ An iPhone and iPad app for seeing and controlling your Mac's screen over VNC (ma
 - **Look around:** drag to pan, pinch or double-tap to zoom. Nothing is sent to the Mac.
 - **Mouse:** use the screen like a trackpad. Drag to move the pointer, tap to click, tap with two fingers to right-click, drag with two fingers to scroll, and touch and hold then drag to select. On iPad, a connected trackpad or mouse controls the pointer directly.
 - **Keyboard:** the on-screen keyboard, plus a row with esc, tab, ⌃ ⌥ ⌘ ⇧ and arrow keys. Hardware keyboards send shortcuts like ⌘C to the Mac.
+- **Finds your Macs:** Macs with Screen Sharing on show up by themselves when you're on the same network.
+- **Home and away:** give each Mac a local address and a Tailscale (or other VPN) address. MacView tries the local one first and falls back to Tailscale, so it's the same Mac in the list wherever you are.
 - Sign in with your Mac account. Passwords are stored in the iOS Keychain on this device only.
 
 ## Set up your Mac

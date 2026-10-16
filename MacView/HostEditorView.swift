@@ -20,12 +20,23 @@ struct HostEditorView: View {
         host.address.trimmingCharacters(in: .whitespaces)
     }
 
+    private var trimmedRemoteAddress: String {
+        host.remoteAddress.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Tailscale names a Mac after its local host name, lowercased: `Studio.local` becomes `studio`.
+    private var suggestedRemoteAddress: String {
+        let local = trimmedAddress.lowercased()
+        guard local.hasSuffix(".local"), local.count > 6 else { return "studio or 100.64.0.1" }
+        return String(local.dropLast(6)) + " or 100.64.0.1"
+    }
+
     private var port: UInt16? {
         UInt16(portText)
     }
 
     private var canSave: Bool {
-        !trimmedAddress.isEmpty && port != nil
+        (!trimmedAddress.isEmpty || !trimmedRemoteAddress.isEmpty) && port != nil
     }
 
     var body: some View {
@@ -33,19 +44,30 @@ struct HostEditorView: View {
             Form {
                 Section {
                     TextField("Name", text: $host.name, prompt: Text("Studio Mac"))
-                    TextField("Address", text: $host.address, prompt: Text("studio.local or 192.168.1.20"))
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                }
+
+                Section {
+                    LabeledContent("Local") {
+                        TextField("Local", text: $host.address, prompt: Text("studio.local"))
+                            .addressField()
+                    }
+                    LabeledContent("Tailscale") {
+                        TextField("Tailscale", text: $host.remoteAddress, prompt: Text(suggestedRemoteAddress))
+                            .addressField()
+                    }
                     LabeledContent("Port") {
                         TextField("Port", text: $portText, prompt: Text("5900"))
                             .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                     }
+                } header: {
+                    Text("Address")
                 } footer: {
                     if port == nil {
                         Text("Enter a port from 1 to 65535. Screen Sharing uses 5900.")
                             .foregroundStyle(.red)
+                    } else {
+                        Text("MacView tries the local address first. If the Mac doesn't answer there, it uses the Tailscale address, which also works for any other VPN.")
                     }
                 }
 
@@ -71,6 +93,7 @@ struct HostEditorView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", systemImage: "checkmark", role: .confirm) {
                         host.address = trimmedAddress
+                        host.remoteAddress = trimmedRemoteAddress
                         host.port = port ?? 5900
                         store.save(host, password: password)
                         dismiss()
@@ -79,5 +102,14 @@ struct HostEditorView: View {
                 }
             }
         }
+    }
+}
+
+private extension View {
+    func addressField() -> some View {
+        keyboardType(.URL)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .multilineTextAlignment(.trailing)
     }
 }

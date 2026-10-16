@@ -52,8 +52,11 @@ final class SessionModel {
     var credentialRequest: CredentialRequest?
     /// Top edge of the bottom controls in window coordinates, so the screen can slide above them.
     var controlsTop: CGFloat = 0
+    /// The address this session is using, once one answered.
+    private(set) var route: Route?
 
     @ObservationIgnored private var connection: VNCConnection?
+    @ObservationIgnored private var routeTask: Task<Void, Never>?
     @ObservationIgnored private var bridge: DelegateBridge?
     @ObservationIgnored private var triedSavedCredentials = false
     @ObservationIgnored private var userClosed = false
@@ -74,10 +77,27 @@ final class SessionModel {
         cancelledSignIn = false
         triedSavedCredentials = false
         status = .connecting
+        route = nil
 
+        routeTask?.cancel()
+        routeTask = Task { [weak self, host] in
+            let route = await RouteFinder.choose(host.routes, port: host.port)
+            guard let self, !Task.isCancelled, !self.userClosed else { return }
+            guard let route else {
+                self.status = .failed(host.remoteAddress.isEmpty
+                    ? "The Mac didn't answer."
+                    : "The Mac didn't answer on your network or through Tailscale. If you're away from home, turn on Tailscale and try again.")
+                return
+            }
+            self.route = route
+            self.open(route)
+        }
+    }
+
+    private func open(_ route: Route) {
         let settings = VNCConnection.Settings(
             isDebugLoggingEnabled: false,
-            hostname: host.address,
+            hostname: route.address,
             port: host.port,
             isShared: true,
             isScalingEnabled: false,
@@ -97,6 +117,7 @@ final class SessionModel {
 
     func disconnect() {
         userClosed = true
+        routeTask?.cancel()
         connection?.disconnect()
         status = .closed
     }
