@@ -66,7 +66,7 @@ enum RouteFinder {
         }
     }
 
-    private static let queue = DispatchQueue(label: "MacView.RouteFinder")
+    private static let queue = DispatchQueue(label: "ScreenDoor.RouteFinder")
 
     /// Whether a TCP connection to the address opens within the timeout.
     private static func probe(_ address: String, port: UInt16) async -> Bool {

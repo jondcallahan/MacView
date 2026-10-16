@@ -106,7 +106,7 @@ final class HostStore {
 }
 
 enum Keychain {
-    private static let service = Bundle.main.bundleIdentifier ?? "MacView"
+    private static let service = Bundle.main.bundleIdentifier ?? "ScreenDoor"
 
     private static func query(for id: UUID) -> [String: Any] {
         [

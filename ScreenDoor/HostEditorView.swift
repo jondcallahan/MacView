@@ -67,7 +67,7 @@ struct HostEditorView: View {
                         Text("Enter a port from 1 to 65535. Screen Sharing uses 5900.")
                             .foregroundStyle(.red)
                     } else {
-                        Text("MacView tries the local address first. If the Mac doesn't answer there, it uses the Tailscale address, which also works for any other VPN. To always use Tailscale, leave Local empty.")
+                        Text("Screen Door tries the local address first. If the Mac doesn't answer there, it uses the Tailscale address, which also works for any other VPN. To always use Tailscale, leave Local empty.")
                     }
                 }
 

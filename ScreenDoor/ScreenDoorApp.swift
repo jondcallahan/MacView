@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct MacViewApp: App {
+struct ScreenDoorApp: App {
     @State private var store = HostStore()
     @Environment(\.scenePhase) private var scenePhase
 

@@ -65,7 +65,7 @@ final class SessionModel {
         case loadingScreen
     }
 
-    private static let log = Logger(subsystem: "MacView", category: "Session")
+    private static let log = Logger(subsystem: "ScreenDoor", category: "Session")
 
     let host: Host
     /// Becomes `.connected` once the first picture of the screen arrives.

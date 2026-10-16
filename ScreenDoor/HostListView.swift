@@ -67,11 +67,11 @@ struct HostListView: View {
             .navigationTitle("Macs")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Menu("About MacView", systemImage: "info.circle") {
-                        Link(destination: URL(string: "https://github.com/jondcallahan/MacView/blob/main/PRIVACY.md")!) {
+                    Menu("About Screen Door", systemImage: "info.circle") {
+                        Link(destination: URL(string: "https://github.com/jondcallahan/ScreenDoor/blob/main/PRIVACY.md")!) {
                             Label("Privacy Policy", systemImage: "hand.raised")
                         }
-                        Link(destination: URL(string: "https://github.com/jondcallahan/MacView")!) {
+                        Link(destination: URL(string: "https://github.com/jondcallahan/ScreenDoor")!) {
                             Label("Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
                         }
                     }

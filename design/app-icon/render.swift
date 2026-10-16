@@ -1,5 +1,5 @@
-// MacView app icon: a solid laptop with an outlined iPhone in front, in white on a blue gradient.
-// swift design/app-icon/render.swift MacView/Assets.xcassets/AppIcon.appiconset/icon.png
+// Screen Door app icon: a solid laptop with an outlined iPhone in front, in white on a blue gradient.
+// swift design/app-icon/render.swift ScreenDoor/Assets.xcassets/AppIcon.appiconset/icon.png
 // Add `preview.png old-icon.png` to also write an old-vs-new comparison sheet.
 import AppKit
 
