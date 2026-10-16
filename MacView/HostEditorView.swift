@@ -81,7 +81,7 @@ struct HostEditorView: View {
                 } header: {
                     Text("Sign-in")
                 } footer: {
-                    Text("Use the name and password you use to log in to this Mac. Your password stays in Keychain on this device.")
+                    Text("Use the username and password you log in to this Mac with. Your password stays in Keychain on this device.")
                 }
             }
             .navigationTitle(isNew ? "Add Mac" : "Edit Mac")

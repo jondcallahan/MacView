@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OSLog
 import RoyalVNCKit
 
 enum InputMode {
@@ -37,7 +38,8 @@ final class SessionModel {
     enum Status: Equatable {
         case connecting
         case connected
-        case failed(String)
+        /// The message explains a known cause. Nil means the Mac didn't answer.
+        case failed(String?)
         case signInRejected
         case closed
     }
@@ -49,6 +51,8 @@ final class SessionModel {
         case signingIn
         case loadingScreen
     }
+
+    private static let log = Logger(subsystem: "MacView", category: "Session")
 
     let host: Host
     /// Becomes `.connected` once the first picture of the screen arrives.
@@ -98,9 +102,7 @@ final class SessionModel {
             self?.timeline.mark("route")
             guard let self, !Task.isCancelled, !self.userClosed else { return }
             guard let route else {
-                self.status = .failed(host.remoteAddress.isEmpty
-                    ? "The Mac didn't answer."
-                    : "The Mac didn't answer on your network or through Tailscale. If you're away from home, turn on Tailscale and try again.")
+                self.status = .failed(nil)
                 return
             }
             self.route = route
@@ -158,7 +160,10 @@ final class SessionModel {
                 } else if let vncError = error as? VNCError, !vncError.shouldDisplayToUser {
                     status = .closed
                 } else {
-                    status = .failed(error.localizedDescription)
+                    // The library's messages are technical, such as "NWError error 61". Log them and
+                    // show the plain guidance instead.
+                    Self.log.error("Connection to \(self.host.displayName, privacy: .private) failed: \(error.localizedDescription, privacy: .public)")
+                    status = .failed(nil)
                 }
             } else {
                 status = .failed("The Mac ended the session.")

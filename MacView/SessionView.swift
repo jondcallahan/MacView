@@ -65,7 +65,7 @@ struct SessionView: View {
             }
         } message: {
             Text(model.credentialRequest?.needsUsername == true
-                 ? "Enter the name and password you use to log in to this Mac."
+                 ? "Enter the username and password you use to log in to this Mac."
                  : "Enter the Screen Sharing password for this Mac.")
         }
         .onChange(of: model.credentialRequest == nil) { _, isNil in
@@ -88,10 +88,13 @@ struct SessionView: View {
                 Text(model.host.displayName)
                     .font(.headline)
                     .lineLimit(1)
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .contentTransition(.opacity)
+                // Until the screen shows, the centre of the screen carries the status.
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.opacity)
+                }
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 8)
@@ -113,35 +116,19 @@ struct SessionView: View {
         .animation(.default, value: subtitle)
     }
 
-    private var subtitle: String {
-        switch model.status {
-        case .connecting: stepTitle
-        case .failed, .signInRejected: "Not connected"
-        case .closed: "Disconnected"
-        case .connected:
-            (model.mode == .mouse || model.isKeyboardActive ? "You're in control" : "Viewing")
-                + (model.route?.kind == .remote ? " · via Tailscale" : "")
-        }
+    private var subtitle: String? {
+        guard model.status == .connected else { return nil }
+        return (model.mode == .mouse || model.isKeyboardActive ? "You're in control" : "Viewing")
+            + (model.route?.kind == .remote ? " · via Tailscale" : "")
     }
 
-    private var stepTitle: String {
+    /// The Mac's name is in the header, so this is just the step.
+    private var stepDescription: String {
         switch model.step {
-        case .finding: "Finding…"
-        case .connecting: "Connecting…"
+        case .finding: "Looking on your network and Tailscale…"
+        case .connecting: model.route?.kind == .remote ? "Connecting through Tailscale…" : "Connecting…"
         case .signingIn: "Signing in…"
         case .loadingScreen: "Loading screen…"
-        }
-    }
-
-    private var stepDescription: String {
-        let name = model.host.displayName
-        return switch model.step {
-        case .finding: "Looking for \(name) on your network and Tailscale…"
-        case .connecting: model.route?.kind == .remote
-            ? "Connecting to \(name) through Tailscale…"
-            : "Connecting to \(name)…"
-        case .signingIn: "Signing in to \(name)…"
-        case .loadingScreen: "Loading \(name)'s screen…"
         }
     }
 
@@ -248,9 +235,10 @@ struct SessionView: View {
             ContentUnavailableView {
                 Label("Couldn't connect to \(model.host.displayName)", systemImage: "exclamationmark.triangle")
             } description: {
-                Text(model.host.remoteAddress.isEmpty
-                     ? "\(message)\n\nCheck that the Mac is awake, Screen Sharing is on, and you're on the same network."
-                     : "\(message)\n\nCheck that the Mac is awake and Screen Sharing is on.")
+                Text([message, model.host.remoteAddress.isEmpty
+                      ? "Make sure the Mac is awake, Screen Sharing is on, and you're on the same network."
+                      : "Make sure the Mac is awake and Screen Sharing is on. If you're away from home, turn on Tailscale."]
+                    .compactMap { $0 }.joined(separator: "\n\n"))
             } actions: {
                 Button("Try again") { model.connect() }
                     .buttonStyle(.glassProminent)
@@ -261,7 +249,7 @@ struct SessionView: View {
             ContentUnavailableView {
                 Label("Sign-in didn't work", systemImage: "person.badge.key")
             } description: {
-                Text("\(model.host.displayName) didn't accept that username and password. Use the name and password you log in to the Mac with.")
+                Text("\(model.host.displayName) didn't accept that username and password. Use the ones you log in to the Mac with.")
             } actions: {
                 Button("Try again") { model.connect() }
                     .buttonStyle(.glassProminent)
