@@ -67,6 +67,10 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     private enum TwoFingerIntent { case undecided, scroll, zoom }
     private var twoFingerIntent = TwoFingerIntent.undecided
     private var zoomBase: CGFloat = 1
+    private var momentumLink: CADisplayLink?
+    private var momentumVelocity = CGPoint.zero
+    /// Whether the Mac's pointer is the text cursor (I-beam), meaning it's over something you can type in.
+    private var isTextCursor = false
     private var lastTouchWasPointer = false
 
     init(model: SessionModel) {
@@ -118,6 +122,7 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         } else if window == nil {
             displayLink?.invalidate()
             displayLink = nil
+            stopMomentum()
         }
     }
 
@@ -158,13 +163,26 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         CATransaction.setDisableActions(true)
         if cursor.isEmpty {
             showDefaultCursor()
+            isTextCursor = false
         } else {
             cursorLayer.contents = cursor.cgImage
             cursorLayer.bounds = CGRect(origin: .zero, size: cursor.cgSize)
             cursorHotspot = cursor.cgHotspot
+            isTextCursor = Self.looksLikeTextCursor(size: cursor.cgSize, hotspot: cursor.cgHotspot)
+            CursorLog.record(size: cursor.cgSize, hotspot: cursor.cgHotspot, isText: isTextCursor)
         }
         positionCursorLayer()
         CATransaction.commit()
+    }
+
+    /// VNC doesn't say what's under the pointer, but its shape does. The text cursor (I-beam) is
+    /// tall and narrow with its hotspot in the middle. Arrows and the pointing hand have theirs at
+    /// the tip, and crosshairs and most resize cursors are about as wide as they are tall.
+    static func looksLikeTextCursor(size: CGSize, hotspot: CGPoint) -> Bool {
+        guard size.width > 0, size.height > 0 else { return false }
+        let x = hotspot.x / size.width
+        let y = hotspot.y / size.height
+        return size.width <= size.height * 0.6 && (0.25...0.75).contains(x) && (0.3...0.7).contains(y)
     }
 
     /// Some servers don't send a cursor shape. Draw a standard arrow so mouse mode always has a pointer.
@@ -252,6 +270,7 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     func apply(mode newMode: InputMode) {
         guard newMode != mode else { return }
         mode = newMode
+        stopMomentum()
         let isMouse = newMode == .mouse
         mouseGestures.forEach { $0.isEnabled = isMouse }
         zoomTap.isEnabled = !isMouse
@@ -311,6 +330,8 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         // `buttonMaskRequired` only applies to trackpads and mice. Without this check, a plain
         // finger tap also satisfies the secondary-button recognizer and becomes a right-click.
         if gestureRecognizer === pointerRightClick { return isPointer }
+        // A finger on the glass catches a flick, like on any iOS scroll view.
+        stopMomentum()
         lastTouchWasPointer = isPointer
         clickFeedback.prepare()
         return true
@@ -389,6 +410,10 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         clickFeedback.impactOccurred()
         model.click(.left, at: cursorPosition)
         setFocus(cursorPosition)
+        // Clicking with the text cursor almost always means a text field. Open the keyboard for it.
+        if isTextCursor, !model.isKeyboardActive {
+            model.isKeyboardActive = true
+        }
     }
 
     /// In Look around mode a tap doesn't click, but it still marks the spot to keep above the
@@ -443,24 +468,64 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
                 lastPanTranslation = translation
                 return
             }
-            scrollRemainder.x += translation.x - lastPanTranslation.x
-            scrollRemainder.y += translation.y - lastPanTranslation.y
+            sendScroll(CGPoint(x: translation.x - lastPanTranslation.x, y: translation.y - lastPanTranslation.y))
             lastPanTranslation = translation
-            let stepSize: CGFloat = 10
-            let vertical = Int(scrollRemainder.y / stepSize)
-            if vertical != 0 {
-                // Natural scrolling: fingers moving down reveal content above.
-                model.scroll(vertical > 0 ? .up : .down, steps: UInt32(abs(vertical)), at: cursorPosition)
-                scrollRemainder.y -= CGFloat(vertical) * stepSize
-            }
-            let horizontal = Int(scrollRemainder.x / stepSize)
-            if horizontal != 0 {
-                model.scroll(horizontal > 0 ? .left : .right, steps: UInt32(abs(horizontal)), at: cursorPosition)
-                scrollRemainder.x -= CGFloat(horizontal) * stepSize
-            }
+        case .ended:
+            if twoFingerIntent == .scroll { startMomentum(gesture.velocity(in: self)) }
+            twoFingerGestureEnded()
         default:
             twoFingerGestureEnded()
         }
+    }
+
+    /// Turns finger travel into scroll wheel steps on the Mac.
+    private func sendScroll(_ delta: CGPoint) {
+        scrollRemainder.x += delta.x
+        scrollRemainder.y += delta.y
+        let stepSize: CGFloat = 10
+        let vertical = Int(scrollRemainder.y / stepSize)
+        if vertical != 0 {
+            // Natural scrolling: fingers moving down reveal content above.
+            model.scroll(vertical > 0 ? .up : .down, steps: UInt32(abs(vertical)), at: cursorPosition)
+            scrollRemainder.y -= CGFloat(vertical) * stepSize
+        }
+        let horizontal = Int(scrollRemainder.x / stepSize)
+        if horizontal != 0 {
+            model.scroll(horizontal > 0 ? .left : .right, steps: UInt32(abs(horizontal)), at: cursorPosition)
+            scrollRemainder.x -= CGFloat(horizontal) * stepSize
+        }
+    }
+
+    // MARK: Momentum
+
+    /// Keeps scrolling after a flick, slowing down the way iOS scroll views do.
+    private func startMomentum(_ velocity: CGPoint) {
+        stopMomentum()
+        var velocity = velocity
+        // A mostly vertical flick shouldn't drift sideways, and the other way round.
+        if abs(velocity.y) > abs(velocity.x) * 2 { velocity.x = 0 }
+        else if abs(velocity.x) > abs(velocity.y) * 2 { velocity.y = 0 }
+        guard hypot(velocity.x, velocity.y) > 250 else { return }
+        momentumVelocity = velocity
+        let link = CADisplayLink(target: self, selector: #selector(stepMomentum(_:)))
+        link.add(to: .main, forMode: .common)
+        momentumLink = link
+    }
+
+    @objc private func stepMomentum(_ link: CADisplayLink) {
+        let dt = link.targetTimestamp - link.timestamp
+        sendScroll(CGPoint(x: momentumVelocity.x * dt, y: momentumVelocity.y * dt))
+        // UIScrollView's normal deceleration rate, per millisecond.
+        let decay = pow(0.998, dt * 1000)
+        momentumVelocity.x *= decay
+        momentumVelocity.y *= decay
+        if hypot(momentumVelocity.x, momentumVelocity.y) < 20 { stopMomentum() }
+    }
+
+    private func stopMomentum() {
+        momentumLink?.invalidate()
+        momentumLink = nil
+        momentumVelocity = .zero
     }
 
     /// The fingers have spread or closed enough that this is a pinch, not a scroll.
@@ -539,5 +604,23 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     func pointerInteraction(_ interaction: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {
         // Hide the iPad pointer in mouse mode so only the Mac's pointer shows.
         mode == .mouse ? .hidden() : nil
+    }
+}
+
+/// Records each pointer shape the Mac sends, in Documents/cursor-shapes.log, to check how well
+/// `looksLikeTextCursor` tells them apart.
+private enum CursorLog {
+    private static var seen = Set<String>()
+
+    static func record(size: CGSize, hotspot: CGPoint, isText: Bool) {
+        let line = "\(Int(size.width))×\(Int(size.height)) hotspot \(Int(hotspot.x)),\(Int(hotspot.y))"
+            + (isText ? " text" : "")
+        guard seen.insert(line).inserted,
+              let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+                .appending(path: "cursor-shapes.log") else { return }
+        let previous = (try? String(contentsOf: url, encoding: .utf8))?
+            .split(separator: "\n").map(String.init) ?? []
+        guard !previous.contains(line) else { return }
+        try? (previous.suffix(49) + [line]).joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
     }
 }
