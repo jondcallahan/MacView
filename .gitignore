@@ -1,0 +1,10 @@
+# Build output
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+.DS_Store
+
+# Personal signing settings (team ID, bundle ID)
+Config/Local.xcconfig
