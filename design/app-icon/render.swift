@@ -4,8 +4,10 @@
 import AppKit
 
 let size: CGFloat = 1024
-let stroke: CGFloat = 50          // one line weight for every outline
+let stroke: CGFloat = 50          // the laptop's base
 let gap: CGFloat = 32             // clear space between the laptop and the phone
+let bezel: CGFloat = 34           // the laptop screen's white border
+let phoneBezel: CGFloat = 40      // a touch heavier than the laptop's, as the phone is drawn smaller
 
 func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> CGColor {
     CGColor(srgbRed: r / 255, green: g / 255, blue: b / 255, alpha: 1)
@@ -48,6 +50,17 @@ func icon() -> CGImage {
     lidPath.closeSubpath()
     ctx.addPath(lidPath)
     ctx.fillPath()
+    // The Mac's screen: a pale panel inside the white bezel, so the lid reads as a display.
+    let display = CGRect(x: lid.minX + bezel, y: lid.minY + bezel,
+                         width: lid.width - bezel * 2, height: lid.height - bezel * 1.6)
+    ctx.saveGState()
+    ctx.addPath(CGPath(roundedRect: display, cornerWidth: screenRadius - bezel * 0.6,
+                       cornerHeight: screenRadius - bezel * 0.6, transform: nil))
+    ctx.clip()
+    let screenGradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+                                    colors: [rgb(170, 220, 255), rgb(120, 190, 255)] as CFArray, locations: [0, 1])!
+    ctx.drawLinearGradient(screenGradient, start: CGPoint(x: 0, y: display.minY), end: CGPoint(x: 0, y: display.maxY), options: [])
+    ctx.restoreGState()
     let foot = place(base)
     ctx.addPath(CGPath(roundedRect: foot, cornerWidth: stroke / 2, cornerHeight: stroke / 2, transform: nil))
     ctx.fillPath()
@@ -60,12 +73,12 @@ func icon() -> CGImage {
     ctx.setBlendMode(.normal)
     ctx.endTransparencyLayer()
 
-    // The phone, as an outline the same weight as the lid.
+    // The phone, as an outline. Its screen shows the background.
     ctx.setFillColor(.white)
     let phonePath = CGMutablePath()
     phonePath.addRoundedRect(in: handset, cornerWidth: phoneRadius, cornerHeight: phoneRadius)
-    let phoneInner = handset.insetBy(dx: stroke, dy: stroke)
-    phonePath.addRoundedRect(in: phoneInner, cornerWidth: phoneRadius - stroke * 0.6, cornerHeight: phoneRadius - stroke * 0.6)
+    let phoneInner = handset.insetBy(dx: phoneBezel, dy: phoneBezel)
+    phonePath.addRoundedRect(in: phoneInner, cornerWidth: phoneRadius - phoneBezel * 0.6, cornerHeight: phoneRadius - phoneBezel * 0.6)
     ctx.addPath(phonePath); ctx.fillPath(using: .evenOdd)
     return ctx.makeImage()!
 }
