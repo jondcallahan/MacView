@@ -25,6 +25,16 @@ struct SessionView: View {
         .safeAreaInset(edge: .top) { header }
         .safeAreaInset(edge: .bottom) { controls }
         .preferredColorScheme(.dark)
+        .sensoryFeedback(.selection, trigger: model.mode)
+        .sensoryFeedback(.impact(weight: .light), trigger: model.isKeyboardActive)
+        .sensoryFeedback(.selection, trigger: model.latchedModifiers)
+        .sensoryFeedback(trigger: model.status) { _, status in
+            switch status {
+            case .connected: .success
+            case .failed, .signInRejected: .error
+            default: nil
+            }
+        }
         .persistentSystemOverlays(.hidden)
         .task { model.connect() }
         .onDisappear { model.disconnect() }
@@ -154,6 +164,7 @@ struct SessionView: View {
                 }
                 .padding(.bottom, 8)
             }
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { model.controlsTop = $0 }
             .animation(.smooth, value: model.isKeyboardActive)
             .animation(.smooth, value: hint)
         }
@@ -278,7 +289,10 @@ private struct KeyRow: View {
     }
 
     private func key(_ title: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        } label: {
             Text(title).font(.callout.weight(.medium)).frame(minWidth: 44, minHeight: 40)
         }
         .buttonStyle(.plain)
@@ -288,7 +302,10 @@ private struct KeyRow: View {
     }
 
     private func key(systemImage: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        } label: {
             Image(systemName: systemImage).font(.callout.weight(.semibold)).frame(width: 44, height: 40)
         }
         .buttonStyle(.plain)

@@ -12,6 +12,7 @@ struct RemoteScreen: UIViewRepresentable {
     func updateUIView(_ view: RemoteScreenView, context: Context) {
         view.apply(mode: model.mode)
         view.setKeyboardActive(model.isKeyboardActive)
+        view.setControlsTop(model.controlsTop)
     }
 }
 
@@ -29,6 +30,8 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     private var pendingFramebuffer: VNCFramebuffer?
     private var displayLink: CADisplayLink?
     private var hasFittedOnce = false
+    /// Height at the bottom covered by the controls and, when it's up, the keyboard.
+    private var obscuredBottom: CGFloat = 0
 
     // Mouse-mode gestures
     private lazy var movePan = UIPanGestureRecognizer(target: self, action: #selector(handleMove(_:)))
@@ -44,6 +47,12 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     private var mouseGestures: [UIGestureRecognizer] {
         [movePan, scrollPan, dragPress, clickTap, rightClickTap, pointerRightClick, hover]
     }
+
+    private let clickFeedback = UIImpactFeedbackGenerator(style: .light)
+    private let rightClickFeedback = UIImpactFeedbackGenerator(style: .rigid)
+    private let dragFeedback = UIImpactFeedbackGenerator(style: .medium)
+    private let edgeFeedback = UIImpactFeedbackGenerator(style: .soft)
+    private var isCursorAtEdge = false
 
     private var lastPanTranslation = CGPoint.zero
     private var lastDragLocation = CGPoint.zero
@@ -72,6 +81,7 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         scrollView.addSubview(screenView)
 
         cursorLayer.zPosition = 10
+        showDefaultCursor()
         screenView.layer.addSublayer(cursorLayer)
 
         addSubview(keyInput)
@@ -135,8 +145,7 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         if cursor.isEmpty {
-            cursorLayer.contents = nil
-            cursorLayer.bounds = .zero
+            showDefaultCursor()
         } else {
             cursorLayer.contents = cursor.cgImage
             cursorLayer.bounds = CGRect(origin: .zero, size: cursor.cgSize)
@@ -144,6 +153,24 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         }
         positionCursorLayer()
         CATransaction.commit()
+    }
+
+    /// Some servers don't send a cursor shape. Draw a standard arrow so mouse mode always has a pointer.
+    private func showDefaultCursor() {
+        let config = UIImage.SymbolConfiguration(pointSize: 30, weight: .regular)
+        guard let arrow = UIImage(systemName: "cursorarrow", withConfiguration: config) else { return }
+        let size = CGSize(width: arrow.size.width + 4, height: arrow.size.height + 4)
+        let image = UIGraphicsImageRenderer(size: size).image { _ in
+            let white = arrow.withTintColor(.white, renderingMode: .alwaysOriginal)
+            for dx in [-1.5, 0, 1.5] { for dy in [-1.5, 0, 1.5] {
+                white.draw(at: CGPoint(x: 2 + dx, y: 2 + dy))
+            } }
+            arrow.withTintColor(.black, renderingMode: .alwaysOriginal).draw(at: CGPoint(x: 2, y: 2))
+        }
+        cursorLayer.contents = image.cgImage
+        cursorLayer.contentsScale = image.scale
+        cursorLayer.bounds = CGRect(origin: .zero, size: size)
+        cursorHotspot = CGPoint(x: size.width * 0.3, y: size.height * 0.14)
     }
 
     private func positionCursorLayer() {
@@ -178,7 +205,22 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         let content = screenView.frame.size
         let insetX = max(0, (bounds.width - content.width) / 2)
         let insetY = max(0, (bounds.height - content.height) / 2)
-        scrollView.contentInset = UIEdgeInsets(top: insetY, left: insetX, bottom: insetY, right: insetX)
+        // The extra bottom inset lets the screen slide up above the keyboard.
+        scrollView.contentInset = UIEdgeInsets(top: insetY, left: insetX, bottom: insetY + obscuredBottom, right: insetX)
+    }
+
+    /// Called with the top edge of the bottom controls, in window coordinates. The controls ride on
+    /// top of the keyboard, so this also tracks the keyboard.
+    func setControlsTop(_ controlsTop: CGFloat) {
+        guard window != nil else { return }
+        let bottom = convert(bounds, to: nil).maxY
+        let newValue = controlsTop > 0 ? max(0, bottom - controlsTop) : 0
+        guard abs(newValue - obscuredBottom) > 0.5 else { return }
+        obscuredBottom = newValue
+        UIView.animate(withDuration: 0.35, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
+            self.centerContent()
+            self.keepCursorVisible(animated: false)
+        }
     }
 
     @objc private func handleZoomTap(_ gesture: UITapGestureRecognizer) {
@@ -247,7 +289,12 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        lastTouchWasPointer = touch.type == .indirectPointer
+        let isPointer = touch.type == .indirectPointer
+        // `buttonMaskRequired` only applies to trackpads and mice. Without this check, a plain
+        // finger tap also satisfies the secondary-button recognizer and becomes a right-click.
+        if gestureRecognizer === pointerRightClick { return isPointer }
+        lastTouchWasPointer = isPointer
+        clickFeedback.prepare()
         return true
     }
 
@@ -272,6 +319,10 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         let size = screenView.bounds.size
         cursorPosition.x = min(max(cursorPosition.x + delta.x, 0), size.width - 1)
         cursorPosition.y = min(max(cursorPosition.y + delta.y, 0), size.height - 1)
+        let atEdge = cursorPosition.x <= 0 || cursorPosition.y <= 0
+            || cursorPosition.x >= size.width - 1 || cursorPosition.y >= size.height - 1
+        if atEdge, !isCursorAtEdge { edgeFeedback.impactOccurred() }
+        isCursorAtEdge = atEdge
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         positionCursorLayer()
@@ -299,7 +350,7 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         switch gesture.state {
         case .began:
             lastDragLocation = location
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            dragFeedback.impactOccurred()
             model.mouseDown(.left, at: cursorPosition)
         case .changed:
             let step = CGPoint(x: location.x - lastDragLocation.x, y: location.y - lastDragLocation.y)
@@ -307,6 +358,7 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
             moveCursor(by: pointerDelta(for: step))
             model.mouseMove(to: cursorPosition)
         default:
+            dragFeedback.impactOccurred(intensity: 0.5)
             model.mouseUp(.left, at: cursorPosition)
         }
     }
@@ -316,16 +368,19 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
             cursorPosition = gesture.location(in: screenView)
             positionCursorLayer()
         }
+        clickFeedback.impactOccurred()
         model.click(.left, at: cursorPosition)
     }
 
     @objc private func handleRightClick(_ gesture: UITapGestureRecognizer) {
+        rightClickFeedback.impactOccurred()
         model.click(.right, at: cursorPosition)
     }
 
     @objc private func handlePointerRightClick(_ gesture: UITapGestureRecognizer) {
         cursorPosition = gesture.location(in: screenView)
         positionCursorLayer()
+        rightClickFeedback.impactOccurred()
         model.click(.right, at: cursorPosition)
     }
 
@@ -372,21 +427,28 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         }
     }
 
-    /// Scrolls the viewport so the pointer stays on screen while zoomed in.
+    /// Scrolls the viewport so the pointer, which sits where you last clicked, stays visible.
+    /// When the keyboard covers it, the whole screen slides up.
     private func keepCursorVisible(animated: Bool) {
         let point = screenView.convert(cursorPosition, to: scrollView)
         let margin: CGFloat = 60
-        let visible = CGRect(origin: scrollView.contentOffset, size: scrollView.bounds.size).insetBy(dx: margin, dy: margin)
-        guard !visible.contains(point) else { return }
+        let bottomMargin: CGFloat = 32
+        var visible = CGRect(origin: scrollView.contentOffset, size: scrollView.bounds.size)
+        visible.size.height -= obscuredBottom
+        visible = visible.inset(by: UIEdgeInsets(top: margin, left: margin, bottom: bottomMargin, right: margin))
+
         var offset = scrollView.contentOffset
         if point.x < visible.minX { offset.x -= visible.minX - point.x }
         if point.x > visible.maxX { offset.x += point.x - visible.maxX }
-        if point.y < visible.minY { offset.y -= visible.minY - point.y }
         if point.y > visible.maxY { offset.y += point.y - visible.maxY }
+        else if point.y < visible.minY { offset.y -= visible.minY - point.y }
+
         let inset = scrollView.contentInset
         offset.x = min(max(offset.x, -inset.left), max(-inset.left, scrollView.contentSize.width - scrollView.bounds.width + inset.right))
         offset.y = min(max(offset.y, -inset.top), max(-inset.top, scrollView.contentSize.height - scrollView.bounds.height + inset.bottom))
-        scrollView.setContentOffset(offset, animated: animated)
+        if offset != scrollView.contentOffset {
+            scrollView.setContentOffset(offset, animated: animated)
+        }
     }
 
     // MARK: Pointer

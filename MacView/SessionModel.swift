@@ -50,6 +50,8 @@ final class SessionModel {
     /// Modifiers the user latched from the key row. They apply to the next key, then clear.
     var latchedModifiers: Modifiers = []
     var credentialRequest: CredentialRequest?
+    /// Top edge of the bottom controls in window coordinates, so the screen can slide above them.
+    var controlsTop: CGFloat = 0
 
     @ObservationIgnored private var connection: VNCConnection?
     @ObservationIgnored private var bridge: DelegateBridge?
