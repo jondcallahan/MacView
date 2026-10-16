@@ -1,0 +1,4 @@
+[{"id":"6B1E2B9A-1111-4C2D-9E10-000000000001","name":"MacBook Pro","address":"macbook-pro.local","remoteAddress":"macbook-pro","port":5998,"username":"alex","model":"Mac15,7"},
+{"id":"6B1E2B9A-1111-4C2D-9E10-000000000002","name":"Studio","address":"studio.local","remoteAddress":"studio","port":5900,"username":"alex","model":"Mac14,13"},
+{"id":"6B1E2B9A-1111-4C2D-9E10-000000000003","name":"Mac mini","address":"mac-mini.local","remoteAddress":"","port":5900,"username":"alex","model":"Mac16,10"},
+{"id":"6B1E2B9A-1111-4C2D-9E10-000000000004","name":"Family iMac","address":"imac.local","remoteAddress":"","port":5900,"username":"alex","model":"Mac16,2"}]

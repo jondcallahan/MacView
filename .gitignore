@@ -8,3 +8,4 @@ xcuserdata/
 
 # Personal signing settings (team ID, bundle ID)
 Config/Local.xcconfig
+design/app-store/source/desktop.rgbx
