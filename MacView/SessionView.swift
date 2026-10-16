@@ -57,9 +57,8 @@ struct SessionView: View {
             }
             Button("Sign in") {
                 guard let request = model.credentialRequest else { return }
-                let credential: VNCCredential = request.needsUsername
-                    ? VNCUsernamePasswordCredential(username: username, password: password)
-                    : VNCPasswordCredential(password: password)
+                let credential = SessionModel.credential(needsUsername: request.needsUsername,
+                                                         username: username, password: password)
                 password = ""
                 request.completion(credential)
             }

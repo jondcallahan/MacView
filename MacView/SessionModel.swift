@@ -74,6 +74,8 @@ final class SessionModel {
     @ObservationIgnored private var routeTask: Task<Void, Never>?
     @ObservationIgnored private var bridge: DelegateBridge?
     @ObservationIgnored private var triedSavedCredentials = false
+    /// The Mac turned down the saved password this session, so retries ask for it instead.
+    @ObservationIgnored private var savedPasswordRejected = false
     @ObservationIgnored private var userClosed = false
     @ObservationIgnored private var cancelledSignIn = false
 
@@ -136,7 +138,16 @@ final class SessionModel {
         userClosed = true
         routeTask?.cancel()
         connection?.disconnect()
+        endInput()
         status = .closed
+    }
+
+    /// Without a session there's nothing to type into. The key row and the keyboard toggle are
+    /// gone too, so the keyboard would cover the error screen with no way to close it.
+    private func endInput() {
+        isKeyboardActive = false
+        latchedModifiers = []
+        credentialRequest = nil
     }
 
     fileprivate func stateChanged(_ state: VNCConnection.ConnectionState) {
@@ -153,16 +164,18 @@ final class SessionModel {
             connection?.delegate = nil
             connection = nil
             bridge = nil
+            endInput()
             guard !userClosed, !cancelledSignIn else { status = .closed; return }
             if let error = state.error {
                 if let vncError = error as? VNCError, vncError.isAuthenticationError {
+                    if triedSavedCredentials { savedPasswordRejected = true }
                     status = .signInRejected
                 } else if let vncError = error as? VNCError, !vncError.shouldDisplayToUser {
                     status = .closed
                 } else {
                     // The library's messages are technical, such as "NWError error 61". Log them and
                     // show the plain guidance instead.
-                    Self.log.error("Connection to \(self.host.displayName, privacy: .private) failed: \(error.localizedDescription, privacy: .public)")
+                    Self.log.error("Connection to \(self.host.displayName, privacy: .private) failed: \(error.localizedDescription, privacy: .private)")
                     status = .failed(nil)
                 }
             } else {
@@ -178,7 +191,7 @@ final class SessionModel {
         timeline.mark("handshake")
         step = .signingIn
         let saved = Keychain.password(for: host.id)
-        if !triedSavedCredentials, let saved, !saved.isEmpty,
+        if !triedSavedCredentials, !savedPasswordRejected, let saved, !saved.isEmpty,
            !type.requiresUsername || !host.username.isEmpty {
             triedSavedCredentials = true
             completion(credential(for: type, username: host.username, password: saved))
@@ -192,8 +205,16 @@ final class SessionModel {
     }
 
     func credential(for type: VNCAuthenticationType, username: String, password: String) -> VNCCredential {
-        type.requiresUsername
-            ? VNCUsernamePasswordCredential(username: username, password: password)
+        Self.credential(needsUsername: type.requiresUsername, username: username, password: password)
+    }
+
+    /// Apple's sign-in packs the username and password into 64-byte fields. RoyalVNCKit measures
+    /// them in bytes but trims them in characters, which crashes on long passwords with accented
+    /// or other multi-byte characters. Trimming to 63 bytes here, on a character boundary, keeps
+    /// it on its safe path.
+    static func credential(needsUsername: Bool, username: String, password: String) -> VNCCredential {
+        needsUsername
+            ? VNCUsernamePasswordCredential(username: username.utf8Prefix(63), password: password.utf8Prefix(63))
             : VNCPasswordCredential(password: password)
     }
 
@@ -318,9 +339,9 @@ private final class DelegateBridge: VNCConnectionDelegate {
     }
 }
 
-/// Times each step of connecting and keeps the last few results in Documents/connect-timing.log,
-/// to see where a slow connection spends its time.
-private struct ConnectTimeline {
+/// Times each step of connecting. Debug builds keep the last few results in
+/// Documents/connect-timing.log, to see where a slow connection spends its time.
+struct ConnectTimeline {
     private let start = ContinuousClock.now
     private var last = ContinuousClock.now
     private var steps: [String] = []
@@ -332,6 +353,7 @@ private struct ConnectTimeline {
     }
 
     func save(summary: String) {
+        #if DEBUG
         let line = "\(Date().formatted(date: .omitted, time: .standard)) \(summary): "
             + steps.joined(separator: ", ") + ", total \(Self.ms(ContinuousClock.now - start))"
         guard let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
@@ -339,9 +361,36 @@ private struct ConnectTimeline {
         let previous = (try? String(contentsOf: url, encoding: .utf8))?
             .split(separator: "\n").suffix(19).map(String.init) ?? []
         try? (previous + [line]).joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        #endif
+    }
+
+    /// Release builds don't keep diagnostics. Remove any that a development build left behind.
+    static func removeDevelopmentLogs() {
+        #if !DEBUG
+        guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        for name in ["connect-timing.log", "cursor-shapes.log"] {
+            try? FileManager.default.removeItem(at: documents.appending(path: name))
+        }
+        #endif
     }
 
     private static func ms(_ duration: Duration) -> String {
         "\(Int(duration / .milliseconds(1)))ms"
+    }
+}
+
+extension String {
+    /// The longest leading part of the string that fits in `maxBytes` of UTF-8, without splitting a character.
+    func utf8Prefix(_ maxBytes: Int) -> String {
+        guard utf8.count > maxBytes else { return self }
+        var result = ""
+        var bytes = 0
+        for character in self {
+            let size = character.utf8.count
+            guard bytes + size <= maxBytes else { break }
+            result.append(character)
+            bytes += size
+        }
+        return result
     }
 }

@@ -144,6 +144,11 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
 
         let size = framebuffer.cgSize
         if screenView.bounds.size != size {
+            // The Mac's resolution changed. A view's frame can't be set while the zoom transform
+            // is applied, so drop back to 1× first and fit the new size afterwards.
+            scrollView.minimumZoomScale = min(scrollView.minimumZoomScale, 1)
+            scrollView.maximumZoomScale = max(scrollView.maximumZoomScale, 1)
+            scrollView.zoomScale = 1
             screenView.frame = CGRect(origin: .zero, size: size)
             scrollView.contentSize = size
             cursorPosition = CGPoint(x: size.width / 2, y: size.height / 2)
@@ -320,11 +325,17 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         }
     }
 
+    /// Called from SwiftUI's view update. Showing or hiding the keyboard animates and lays out the
+    /// window, and doing that inside the update can send SwiftUI into an update cycle, so wait
+    /// until the update has finished.
     func setKeyboardActive(_ active: Bool) {
-        if active, !keyInput.isFirstResponder {
-            keyInput.becomeFirstResponder()
-        } else if !active, keyInput.isFirstResponder {
-            keyInput.resignFirstResponder()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.model.isKeyboardActive == active else { return }
+            if active, !self.keyInput.isFirstResponder {
+                self.keyInput.becomeFirstResponder()
+            } else if !active, self.keyInput.isFirstResponder {
+                self.keyInput.resignFirstResponder()
+            }
         }
     }
 
@@ -641,12 +652,13 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     }
 }
 
-/// Records each pointer shape the Mac sends, in Documents/cursor-shapes.log, to check how well
-/// `looksLikeTextCursor` tells them apart.
+/// In debug builds, records each pointer shape the Mac sends in Documents/cursor-shapes.log,
+/// to check how well `looksLikeTextCursor` tells them apart.
 private enum CursorLog {
     private static var seen = Set<String>()
 
     static func record(size: CGSize, visible: CGRect?, hotspot: CGPoint, isText: Bool) {
+        #if DEBUG
         let shown = visible.map { " visible \(Int($0.width))×\(Int($0.height)) at \(Int($0.minX)),\(Int($0.minY))" } ?? ""
         let line = "\(Int(size.width))×\(Int(size.height))\(shown) hotspot \(Int(hotspot.x)),\(Int(hotspot.y))"
             + (isText ? " text" : "")
@@ -657,5 +669,6 @@ private enum CursorLog {
             .split(separator: "\n").map(String.init) ?? []
         guard !previous.contains(line) else { return }
         try? (previous.suffix(49) + [line]).joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        #endif
     }
 }

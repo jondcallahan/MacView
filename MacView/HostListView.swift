@@ -66,6 +66,16 @@ struct HostListView: View {
             }
             .navigationTitle("Macs")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu("About MacView", systemImage: "info.circle") {
+                        Link(destination: URL(string: "https://github.com/jondcallahan/MacView/blob/main/PRIVACY.md")!) {
+                            Label("Privacy Policy", systemImage: "hand.raised")
+                        }
+                        Link(destination: URL(string: "https://github.com/jondcallahan/MacView")!) {
+                            Label("Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
+                        }
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button("Add Mac", systemImage: "plus") {
                         editingHost = Host(name: "", address: "")

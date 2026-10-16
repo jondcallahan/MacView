@@ -25,7 +25,9 @@ Requires Xcode 26 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 
 ## Security
 
-Your Mac password is sent securely when you sign in. After that, standard VNC doesn't encrypt the session, so the screen and your keystrokes travel unencrypted. That's fine on your home network. From anywhere else, connect over a VPN such as Tailscale, and don't expose port 5900 to the internet.
+When you sign in, your Mac password is encrypted on its way to the Mac. After that, standard VNC doesn't encrypt the session, so the screen and your keystrokes travel unencrypted, and VNC can't confirm that you've reached your own Mac. That's fine on your home network. From anywhere else, connect over a VPN such as Tailscale, and don't expose port 5900 to the internet.
+
+MacView collects no data. See the [privacy policy](PRIVACY.md).
 
 ## Known limits
 

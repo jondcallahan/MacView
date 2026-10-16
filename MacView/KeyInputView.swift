@@ -17,6 +17,13 @@ final class KeyInputView: UIView, UIKeyInput {
 
     override var canBecomeFirstResponder: Bool { true }
 
+    /// iOS can take focus away by itself, such as when an alert appears. Keep the keyboard button in step.
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned, model.isKeyboardActive { model.isKeyboardActive = false }
+        return resigned
+    }
+
     // MARK: On-screen keyboard
 
     var hasText: Bool { true }
