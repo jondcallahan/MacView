@@ -41,6 +41,65 @@ func drawBackground(_ ctx: CGContext) {
     let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
                               colors: [rgb(75, 177, 255), rgb(11, 93, 243)] as CFArray, locations: [0, 1])!
     ctx.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: size), options: [])
+    drawMesh(ctx)
+}
+
+/// A faint woven wire mesh, like a screen door. Each wire is shaded so it looks round, and the
+/// wires take turns crossing over each other, with a small shadow where one passes over the other.
+let meshPitch: CGFloat = 30      // wire spacing. Much finer and it's lost at home screen size.
+let meshStrength: CGFloat = 0.12 // how strongly the wires show
+
+func drawMesh(_ ctx: CGContext) {
+    let wire = meshPitch * 0.22
+    let count = Int(size / meshPitch) + 1
+    let space = CGColorSpace(name: CGColorSpace.sRGB)!
+    let shade = CGColor(srgbRed: 0, green: 0.06, blue: 0.28, alpha: meshStrength * 1.4)
+    let shine = CGColor(gray: 1, alpha: meshStrength * 1.6)
+    let round = CGGradient(colorsSpace: space, colors: [shade, shine, shade] as CFArray, locations: [0, 0.4, 1])!
+    let shadow = CGColor(srgbRed: 0, green: 0.04, blue: 0.2, alpha: meshStrength * 1.2)
+
+    func wireRect(_ rect: CGRect, horizontal: Bool) {
+        ctx.saveGState()
+        ctx.clip(to: rect)
+        let start = horizontal ? CGPoint(x: 0, y: rect.minY) : CGPoint(x: rect.minX, y: 0)
+        let end = horizontal ? CGPoint(x: 0, y: rect.maxY) : CGPoint(x: rect.maxX, y: 0)
+        ctx.drawLinearGradient(round, start: start, end: end, options: [])
+        ctx.restoreGState()
+    }
+    func row(_ i: Int) -> CGRect { CGRect(x: 0, y: CGFloat(i) * meshPitch - wire / 2, width: size, height: wire) }
+    func column(_ i: Int) -> CGRect { CGRect(x: CGFloat(i) * meshPitch - wire / 2, y: 0, width: wire, height: size) }
+
+    // Each crossing shows only the wire on top. The wire underneath gets a short shadow either side.
+    func verticalOnTop(_ r: Int, _ c: Int) -> Bool { (r + c) % 2 == 0 }
+    let shadowLength = wire * 0.45
+    for r in 0...count {
+        let band = row(r)
+        var x: CGFloat = 0
+        for c in 0...count + 1 where c > count || verticalOnTop(r, c) {
+            let gapStart = c > count ? size : CGFloat(c) * meshPitch - wire / 2
+            if gapStart > x { wireRect(CGRect(x: x, y: band.minY, width: gapStart - x, height: wire), horizontal: true) }
+            if c <= count {
+                ctx.setFillColor(shadow)
+                ctx.fill(CGRect(x: gapStart - shadowLength, y: band.minY, width: shadowLength, height: wire))
+                ctx.fill(CGRect(x: gapStart + wire, y: band.minY, width: shadowLength, height: wire))
+            }
+            x = gapStart + wire
+        }
+    }
+    for c in 0...count {
+        let band = column(c)
+        var y: CGFloat = 0
+        for r in 0...count + 1 where r > count || !verticalOnTop(r, c) {
+            let gapStart = r > count ? size : CGFloat(r) * meshPitch - wire / 2
+            if gapStart > y { wireRect(CGRect(x: band.minX, y: y, width: wire, height: gapStart - y), horizontal: false) }
+            if r <= count {
+                ctx.setFillColor(shadow)
+                ctx.fill(CGRect(x: band.minX, y: gapStart - shadowLength, width: wire, height: shadowLength))
+                ctx.fill(CGRect(x: band.minX, y: gapStart + wire, width: wire, height: shadowLength))
+            }
+            y = gapStart + wire
+        }
+    }
 }
 
 func drawArt(_ ctx: CGContext) {
