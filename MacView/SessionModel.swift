@@ -42,8 +42,18 @@ final class SessionModel {
         case closed
     }
 
+    /// Where a connection has got to, shown while `status` is `.connecting`.
+    enum Step {
+        case finding
+        case connecting
+        case signingIn
+        case loadingScreen
+    }
+
     let host: Host
+    /// Becomes `.connected` once the first picture of the screen arrives.
     private(set) var status: Status = .connecting
+    private(set) var step: Step = .connecting
     private(set) var framebufferSize: CGSize = .zero
     var mode: InputMode = .view
     var isKeyboardActive = false
@@ -56,6 +66,7 @@ final class SessionModel {
     private(set) var route: Route?
 
     @ObservationIgnored private var connection: VNCConnection?
+    @ObservationIgnored private var timeline = ConnectTimeline()
     @ObservationIgnored private var routeTask: Task<Void, Never>?
     @ObservationIgnored private var bridge: DelegateBridge?
     @ObservationIgnored private var triedSavedCredentials = false
@@ -77,11 +88,14 @@ final class SessionModel {
         cancelledSignIn = false
         triedSavedCredentials = false
         status = .connecting
+        step = host.routes.count > 1 ? .finding : .connecting
         route = nil
+        timeline = ConnectTimeline()
 
         routeTask?.cancel()
         routeTask = Task { [weak self, host] in
             let route = await RouteFinder.choose(host.routes, port: host.port)
+            self?.timeline.mark("route")
             guard let self, !Task.isCancelled, !self.userClosed else { return }
             guard let route else {
                 self.status = .failed(host.remoteAddress.isEmpty
@@ -90,6 +104,7 @@ final class SessionModel {
                 return
             }
             self.route = route
+            self.step = .connecting
             self.open(route)
         }
     }
@@ -127,7 +142,9 @@ final class SessionModel {
         case .connecting:
             status = .connecting
         case .connected:
-            status = .connected
+            // Signed in. The screen shows once its first picture arrives.
+            timeline.mark("signed in")
+            step = .loadingScreen
         case .disconnecting:
             break
         case .disconnected:
@@ -153,6 +170,8 @@ final class SessionModel {
 
     fileprivate func credentialNeeded(for type: VNCAuthenticationType,
                                       completion: @escaping (VNCCredential?) -> Void) {
+        timeline.mark("handshake")
+        step = .signingIn
         let saved = Keychain.password(for: host.id)
         if !triedSavedCredentials, let saved, !saved.isEmpty,
            !type.requiresUsername || !host.username.isEmpty {
@@ -176,6 +195,15 @@ final class SessionModel {
     fileprivate func framebufferCreated(_ framebuffer: VNCFramebuffer) {
         framebufferSize = framebuffer.cgSize
         onFramebufferUpdate?(framebuffer)
+    }
+
+    fileprivate func framebufferUpdated(_ framebuffer: VNCFramebuffer) {
+        onFramebufferUpdate?(framebuffer)
+        guard status == .connecting, step == .loadingScreen else { return }
+        status = .connected
+        timeline.mark("first picture")
+        timeline.save(summary: "\(host.displayName) via \(route?.kind == .remote ? "Tailscale" : "local"), "
+                      + "\(Int(framebufferSize.width))×\(Int(framebufferSize.height))")
     }
 
     // MARK: Mouse
@@ -277,10 +305,38 @@ private final class DelegateBridge: VNCConnectionDelegate {
     func connection(_ connection: VNCConnection,
                     didUpdateFramebuffer framebuffer: VNCFramebuffer,
                     x: UInt16, y: UInt16, width: UInt16, height: UInt16) {
-        Task { @MainActor [weak self] in self?.model?.onFramebufferUpdate?(framebuffer) }
+        Task { @MainActor [weak self] in self?.model?.framebufferUpdated(framebuffer) }
     }
 
     func connection(_ connection: VNCConnection, didUpdateCursor cursor: VNCCursor) {
         Task { @MainActor [weak self] in self?.model?.onCursorUpdate?(cursor) }
+    }
+}
+
+/// Times each step of connecting and keeps the last few results in Documents/connect-timing.log,
+/// to see where a slow connection spends its time.
+private struct ConnectTimeline {
+    private let start = ContinuousClock.now
+    private var last = ContinuousClock.now
+    private var steps: [String] = []
+
+    mutating func mark(_ step: String) {
+        let now = ContinuousClock.now
+        steps.append("\(step) \(Self.ms(now - last))")
+        last = now
+    }
+
+    func save(summary: String) {
+        let line = "\(Date().formatted(date: .omitted, time: .standard)) \(summary): "
+            + steps.joined(separator: ", ") + ", total \(Self.ms(ContinuousClock.now - start))"
+        guard let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appending(path: "connect-timing.log") else { return }
+        let previous = (try? String(contentsOf: url, encoding: .utf8))?
+            .split(separator: "\n").suffix(19).map(String.init) ?? []
+        try? (previous + [line]).joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static func ms(_ duration: Duration) -> String {
+        "\(Int(duration / .milliseconds(1)))ms"
     }
 }

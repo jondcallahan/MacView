@@ -115,12 +115,33 @@ struct SessionView: View {
 
     private var subtitle: String {
         switch model.status {
-        case .connecting: "Connecting…"
+        case .connecting: stepTitle
         case .failed, .signInRejected: "Not connected"
         case .closed: "Disconnected"
         case .connected:
             (model.mode == .mouse || model.isKeyboardActive ? "You're in control" : "Viewing")
                 + (model.route?.kind == .remote ? " · via Tailscale" : "")
+        }
+    }
+
+    private var stepTitle: String {
+        switch model.step {
+        case .finding: "Finding…"
+        case .connecting: "Connecting…"
+        case .signingIn: "Signing in…"
+        case .loadingScreen: "Loading screen…"
+        }
+    }
+
+    private var stepDescription: String {
+        let name = model.host.displayName
+        return switch model.step {
+        case .finding: "Looking for \(name) on your network and Tailscale…"
+        case .connecting: model.route?.kind == .remote
+            ? "Connecting to \(name) through Tailscale…"
+            : "Connecting to \(name)…"
+        case .signingIn: "Signing in to \(name)…"
+        case .loadingScreen: "Loading \(name)'s screen…"
         }
     }
 
@@ -218,8 +239,10 @@ struct SessionView: View {
             VStack(spacing: 14) {
                 ProgressView()
                     .controlSize(.large)
-                Text("Connecting to \(model.host.displayName)…")
+                Text(stepDescription)
                     .foregroundStyle(.secondary)
+                    .contentTransition(.opacity)
+                    .animation(.default, value: model.step)
             }
         case .failed(let message):
             ContentUnavailableView {
