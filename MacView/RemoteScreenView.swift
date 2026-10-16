@@ -32,6 +32,9 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     private var hasFittedOnce = false
     /// Height at the bottom covered by the controls and, when it's up, the keyboard.
     private var obscuredBottom: CGFloat = 0
+    /// Where the user last clicked, or tapped in Look around mode, in screen coordinates. This is
+    /// usually the text field they're about to type in, so it's what stays above the keyboard.
+    private var focusPoint: CGPoint?
 
     // Mouse-mode gestures
     private lazy var movePan = UIPanGestureRecognizer(target: self, action: #selector(handleMove(_:)))
@@ -43,6 +46,7 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     private lazy var hover = UIHoverGestureRecognizer(target: self, action: #selector(handleHover(_:)))
     // View-mode gestures
     private lazy var zoomTap = UITapGestureRecognizer(target: self, action: #selector(handleZoomTap(_:)))
+    private lazy var focusTap = UITapGestureRecognizer(target: self, action: #selector(handleFocusTap(_:)))
 
     private var mouseGestures: [UIGestureRecognizer] {
         [movePan, scrollPan, dragPress, clickTap, rightClickTap, pointerRightClick, hover]
@@ -132,6 +136,8 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
             screenView.frame = CGRect(origin: .zero, size: size)
             scrollView.contentSize = size
             cursorPosition = CGPoint(x: size.width / 2, y: size.height / 2)
+            focusPoint = nil
+            positionCursorLayer()
             hasFittedOnce = false
             updateZoomLimits(refit: true)
         }
@@ -219,7 +225,7 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         obscuredBottom = newValue
         UIView.animate(withDuration: 0.35, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
             self.centerContent()
-            self.keepCursorVisible(animated: false)
+            self.keepVisible(self.focusPoint ?? self.cursorPosition, animated: false)
         }
     }
 
@@ -243,6 +249,7 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         let isMouse = newMode == .mouse
         mouseGestures.forEach { $0.isEnabled = isMouse }
         zoomTap.isEnabled = !isMouse
+        focusTap.isEnabled = !isMouse
         // In mouse mode, one finger drives the pointer, so the view follows the pointer instead of panning.
         scrollView.panGestureRecognizer.isEnabled = !isMouse
         if isMouse {
@@ -264,6 +271,8 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     private func configureGestures() {
         zoomTap.numberOfTapsRequired = 2
         screenView.addGestureRecognizer(zoomTap)
+        focusTap.require(toFail: zoomTap)
+        screenView.addGestureRecognizer(focusTap)
         screenView.isUserInteractionEnabled = true
 
         movePan.maximumNumberOfTouches = 1
@@ -370,6 +379,18 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         }
         clickFeedback.impactOccurred()
         model.click(.left, at: cursorPosition)
+        setFocus(cursorPosition)
+    }
+
+    /// In Look around mode a tap doesn't click, but it still marks the spot to keep above the
+    /// keyboard. At the Mac's login screen, for example, the password field already has focus.
+    @objc private func handleFocusTap(_ gesture: UITapGestureRecognizer) {
+        setFocus(gesture.location(in: screenView))
+    }
+
+    private func setFocus(_ point: CGPoint) {
+        focusPoint = point
+        if obscuredBottom > 0 { keepVisible(point, animated: true) }
     }
 
     @objc private func handleRightClick(_ gesture: UITapGestureRecognizer) {
@@ -427,10 +448,14 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
         }
     }
 
-    /// Scrolls the viewport so the pointer, which sits where you last clicked, stays visible.
-    /// When the keyboard covers it, the whole screen slides up.
     private func keepCursorVisible(animated: Bool) {
-        let point = screenView.convert(cursorPosition, to: scrollView)
+        keepVisible(cursorPosition, animated: animated)
+    }
+
+    /// Scrolls the viewport so a point on the Mac's screen stays visible. When the keyboard
+    /// covers it, the whole screen slides up.
+    private func keepVisible(_ screenPoint: CGPoint, animated: Bool) {
+        let point = screenView.convert(screenPoint, to: scrollView)
         let margin: CGFloat = 60
         let bottomMargin: CGFloat = 32
         var visible = CGRect(origin: scrollView.contentOffset, size: scrollView.bounds.size)
