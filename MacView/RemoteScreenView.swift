@@ -168,8 +168,16 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
             cursorLayer.contents = cursor.cgImage
             cursorLayer.bounds = CGRect(origin: .zero, size: cursor.cgSize)
             cursorHotspot = cursor.cgHotspot
-            isTextCursor = Self.looksLikeTextCursor(size: cursor.cgSize, hotspot: cursor.cgHotspot)
-            CursorLog.record(size: cursor.cgSize, hotspot: cursor.cgHotspot, isText: isTextCursor)
+            let visible = cursor.cgImage.flatMap { image in
+                // The hotspot is in the cursor's points, which may not be the image's pixels.
+                Self.visibleBounds(of: image).map { bounds in
+                    let scale = CGFloat(image.width) / max(cursor.cgSize.width, 1)
+                    return CGRect(x: bounds.minX / scale, y: bounds.minY / scale,
+                                  width: bounds.width / scale, height: bounds.height / scale)
+                }
+            }
+            isTextCursor = visible.map { Self.looksLikeTextCursor(visible: $0, hotspot: cursor.cgHotspot) } ?? false
+            CursorLog.record(size: cursor.cgSize, visible: visible, hotspot: cursor.cgHotspot, isText: isTextCursor)
         }
         positionCursorLayer()
         CATransaction.commit()
@@ -178,11 +186,37 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
     /// VNC doesn't say what's under the pointer, but its shape does. The text cursor (I-beam) is
     /// tall and narrow with its hotspot in the middle. Arrows and the pointing hand have theirs at
     /// the tip, and crosshairs and most resize cursors are about as wide as they are tall.
-    static func looksLikeTextCursor(size: CGSize, hotspot: CGPoint) -> Bool {
-        guard size.width > 0, size.height > 0 else { return false }
-        let x = hotspot.x / size.width
-        let y = hotspot.y / size.height
-        return size.width <= size.height * 0.6 && (0.25...0.75).contains(x) && (0.3...0.7).contains(y)
+    /// macOS pads pointer images, so this looks at the visible part, not the whole image.
+    static func looksLikeTextCursor(visible: CGRect, hotspot: CGPoint) -> Bool {
+        guard visible.width > 0, visible.height > 0 else { return false }
+        let x = (hotspot.x - visible.minX) / visible.width
+        let y = (hotspot.y - visible.minY) / visible.height
+        return visible.width <= visible.height * 0.6 && (0.2...0.8).contains(x) && (0.3...0.7).contains(y)
+    }
+
+    /// The box around the pointer's non-transparent pixels, in the image's pixels.
+    static func visibleBounds(of image: CGImage) -> CGRect? {
+        let width = image.width, height = image.height
+        guard width > 0, height > 0, width * height <= 256 * 256 else { return nil }
+        var alpha = [UInt8](repeating: 0, count: width * height)
+        let drawn = alpha.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                                          bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        for y in 0..<height {
+            for x in 0..<width where alpha[y * width + x] > 32 {
+                minX = min(minX, x); maxX = max(maxX, x)
+                minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard maxX >= 0 else { return nil }
+        // Rows in the bitmap run top to bottom, like the pointer's hotspot.
+        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
     }
 
     /// Some servers don't send a cursor shape. Draw a standard arrow so mouse mode always has a pointer.
@@ -612,8 +646,9 @@ final class RemoteScreenView: UIView, UIScrollViewDelegate, UIGestureRecognizerD
 private enum CursorLog {
     private static var seen = Set<String>()
 
-    static func record(size: CGSize, hotspot: CGPoint, isText: Bool) {
-        let line = "\(Int(size.width))×\(Int(size.height)) hotspot \(Int(hotspot.x)),\(Int(hotspot.y))"
+    static func record(size: CGSize, visible: CGRect?, hotspot: CGPoint, isText: Bool) {
+        let shown = visible.map { " visible \(Int($0.width))×\(Int($0.height)) at \(Int($0.minX)),\(Int($0.minY))" } ?? ""
+        let line = "\(Int(size.width))×\(Int(size.height))\(shown) hotspot \(Int(hotspot.x)),\(Int(hotspot.y))"
             + (isText ? " text" : "")
         guard seen.insert(line).inserted,
               let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
