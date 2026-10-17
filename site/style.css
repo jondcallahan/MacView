@@ -121,10 +121,9 @@ p { margin: 0; text-wrap: pretty; }
   display: inline-flex; align-items: center; min-height: 52px; padding: 0 28px;
   border-radius: 999px; background: var(--blue); color: var(--on-blue);
   font-weight: 600; font-size: 17px; text-decoration: none; white-space: nowrap;
-  box-shadow: 0 10px 24px -8px rgb(11 93 243 / .55);
-  transition: transform .3s var(--ease), box-shadow .3s var(--ease);
+  transition: background-color .2s ease, transform .2s var(--ease);
 }
-.button:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -8px rgb(11 93 243 / .6); }
+.button:hover { background-color: #0a52d6; }
 .button:active { transform: scale(.98); }
 
 .hero-stage { position: relative; aspect-ratio: 4 / 3; }
@@ -306,5 +305,5 @@ p { margin: 0; text-wrap: pretty; }
 
 @media (prefers-reduced-motion: reduce) {
   .button { transition: none; }
-  .button:hover, .button:active { transform: none; }
+  .button:active { transform: none; }
 }
