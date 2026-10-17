@@ -1,6 +1,7 @@
 /* Screen Door site styles.
    Brand: cobalt #0b5df3 (accent), sky #4bb1ff (gradient top, dark-mode accent), system SF type stack.
-   Shape rule: panels and media 20px, iPhone screens 32px (matches the device), controls are full pills. */
+   Shape rule: panels and media 20px, controls are full pills. Device frames use their own
+   hardware proportions (see .device). */
 
 :root {
   --blue: #0b5df3;
@@ -15,7 +16,6 @@
   --link: var(--blue);
   --shadow: 0 1px 2px rgb(13 21 48 / .06), 0 18px 48px -12px rgb(11 50 140 / .22);
   --r: 20px;
-  --r-phone: 32px;
   --ease: cubic-bezier(.16, 1, .3, 1);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
   color-scheme: light dark;
@@ -52,16 +52,56 @@ p { margin: 0; text-wrap: pretty; }
 .wrap { max-width: 1200px; margin: 0 auto; padding: 0 32px; }
 .wrap-wide { max-width: 1440px; margin: 0 auto; padding: 0 32px; }
 
-/* Cobalt panel with the screen-door mesh from the app icon */
+/* Solid cobalt with the screen-door mesh from the app icon */
 .mesh {
   background-color: var(--blue);
   background-image:
     linear-gradient(rgb(255 255 255 / .08) 1.5px, transparent 1.5px),
-    linear-gradient(90deg, rgb(255 255 255 / .08) 1.5px, transparent 1.5px),
-    linear-gradient(160deg, var(--sky), var(--blue) 70%);
-  background-size: 26px 26px, 26px 26px, auto;
+    linear-gradient(90deg, rgb(255 255 255 / .08) 1.5px, transparent 1.5px);
+  background-size: 26px 26px;
   color: var(--on-blue);
 }
+
+/* Device frames around real screenshots. Sizes are in container units (cqw = 1% of the
+   device's width), so bezel, corners and the camera keep hardware proportions at any size. */
+.device { container-type: inline-size; }
+.device-body {
+  position: relative;
+  background: #0b0c0f;
+  box-shadow:
+    inset 0 0 0 .35cqw #23262c,          /* inner edge of the bezel */
+    0 0 0 .45cqw #61666f,                /* metal rim */
+    0 0 0 .7cqw #2a2d33,                 /* outer edge */
+    0 2.5cqw 5cqw -1.5cqw rgb(10 20 50 / .28),
+    0 8cqw 14cqw -6cqw rgb(10 20 50 / .32);
+}
+.device-body img { width: 100%; }
+.iphone .device-body { padding: 2.9cqw; border-radius: 15.6cqw; }
+.iphone .device-body img { border-radius: 12.7cqw; }
+.iphone .device-body::after {             /* Dynamic Island */
+  content: ""; position: absolute; left: 50%; top: 5.3cqw;
+  width: 27cqw; height: 7.9cqw; transform: translateX(-50%);
+  background: #000; border-radius: 99px;
+}
+.ipad .device-body { padding: 2.2cqw; border-radius: 3.9cqw; }
+.ipad .device-body img { border-radius: 1.8cqw; }
+.ipad .device-body::after {               /* front camera, landscape */
+  content: ""; position: absolute; left: 50%; top: .85cqw;
+  width: .55cqw; height: .55cqw; transform: translateX(-50%);
+  background: #1c2230; border-radius: 50%;
+}
+@media (prefers-color-scheme: dark) {
+  .device-body {
+    box-shadow:
+      inset 0 0 0 .35cqw #23262c,
+      0 0 0 .45cqw #6d727c,
+      0 0 0 .7cqw #3a3e46,
+      0 2.5cqw 5cqw -1.5cqw rgb(0 0 0 / .5),
+      0 8cqw 14cqw -6cqw rgb(0 0 0 / .6);
+  }
+}
+/* A slot that a device overflows; the parent clips it, so only the top of the device shows. */
+.device-slot { flex: 1 0 0; min-height: 0; contain: size; }
 
 /* Hero */
 .hero {
@@ -86,23 +126,9 @@ p { margin: 0; text-wrap: pretty; }
 .button:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -8px rgb(11 93 243 / .6); }
 .button:active { transform: scale(.98); }
 
-.hero-stage {
-  position: relative;
-  border-radius: var(--r);
-  aspect-ratio: 7 / 6;
-  overflow: hidden;
-  box-shadow: var(--shadow);
-}
-.stage-ipad {
-  position: absolute; left: 9%; top: 11%; width: 112%;
-  border-radius: var(--r);
-  box-shadow: 0 30px 60px -20px rgb(0 20 80 / .55);
-}
-.stage-phone {
-  position: absolute; left: 6%; bottom: -14%; width: 27%;
-  border-radius: var(--r-phone);
-  box-shadow: 0 30px 60px -16px rgb(0 20 80 / .6);
-}
+.hero-stage { position: relative; aspect-ratio: 4 / 3; }
+.stage-ipad { position: absolute; right: 0; top: 2%; width: 88%; }
+.stage-phone { position: absolute; left: 1%; bottom: 0; width: 25%; }
 
 /* Statement band */
 .statement { padding-top: 24px; padding-bottom: 120px; }
@@ -140,12 +166,8 @@ p { margin: 0; text-wrap: pretty; }
 }
 .cell.accent p { color: rgb(252 252 253 / .92); }
 .cell-find { grid-row: span 2; padding-bottom: 0; }
-.cell-find img {
-  width: 78%; margin: 24px auto 0;
-  aspect-ratio: 552 / 760; object-fit: cover; object-position: top;
-  border-radius: var(--r-phone) var(--r-phone) 0 0;
-  box-shadow: var(--shadow);
-}
+.cell-find .device-slot { padding-top: 28px; min-height: 300px; }
+.cell-find .device { width: 72%; margin: 0 auto; }
 .cell-install { grid-column: span 2; justify-content: flex-end; }
 .cell-install h2 { font-size: clamp(28px, 3vw, 40px); letter-spacing: -0.03em; max-width: 16ch; }
 .cell-install p { font-size: 19px; max-width: 52ch; }
@@ -157,12 +179,8 @@ p { margin: 0; text-wrap: pretty; }
   padding-right: 0; padding-bottom: 0;
 }
 .cell-ipad .cell-text { display: flex; flex-direction: column; gap: 10px; padding-bottom: 32px; }
-.cell-ipad img {
-  align-self: end;
-  width: 100%; aspect-ratio: 4 / 3.1; object-fit: cover; object-position: 100% 40%;
-  border-radius: var(--r) 0 0 0;
-  box-shadow: var(--shadow);
-}
+.cell-ipad .device-slot { align-self: stretch; position: relative; min-height: 220px; }
+.cell-ipad .device { position: absolute; left: 0; top: 4px; width: 150%; }
 .cell-away, .cell-private { justify-content: flex-end; }
 
 /* Keys */
@@ -176,12 +194,7 @@ p { margin: 0; text-wrap: pretty; }
 .keys-copy { align-self: center; padding-top: 72px; }
 .keys-copy h2, .vision-copy h2, .setup h2 { font-size: clamp(32px, 4vw, 52px); letter-spacing: -0.035em; }
 .keys-copy p, .vision-copy p { font-size: 19px; color: var(--muted); margin-top: 16px; max-width: 46ch; }
-.keys-phone {
-  width: min(100%, 300px); justify-self: center;
-  aspect-ratio: 552 / 960; object-fit: cover; object-position: bottom;
-  border-radius: 0 0 var(--r-phone) var(--r-phone);
-  box-shadow: var(--shadow);
-}
+.keys-phone { width: min(100%, 300px); justify-self: center; margin-top: -32%; }
 
 /* Vision Pro */
 .vision { padding-bottom: 128px; }
@@ -263,6 +276,8 @@ p { margin: 0; text-wrap: pretty; }
   .wrap, .wrap-wide { padding: 0 20px; }
   .hero { padding-top: 40px; padding-bottom: 56px; gap: 40px; }
   .hero-icon { width: 72px; height: 72px; border-radius: 16px; margin-bottom: 24px; }
+  .stage-phone { width: 31%; left: 0; }
+  .stage-ipad { width: 86%; }
   .hero h1 { white-space: normal; font-size: clamp(40px, 12.5vw, 56px); }
   .lede { margin: 16px 0 28px; }
   .statement { padding-bottom: 72px; }
@@ -270,13 +285,14 @@ p { margin: 0; text-wrap: pretty; }
   .bento { grid-template-columns: 1fr; grid-auto-rows: auto; padding-bottom: 72px; }
   .cell, .cell-find, .cell-install, .cell-ipad, .cell-private { grid-column: auto; grid-row: auto; padding: 28px; }
   .cell-find { padding-bottom: 0; }
-  .cell-find img { width: 70%; }
+  .cell-find .device { width: 66%; }
+  .cell-find .device-slot { min-height: 320px; }
   .cell-ipad { grid-template-columns: 1fr; padding-right: 0; padding-bottom: 0; }
   .cell-ipad .cell-text { padding-right: 28px; padding-bottom: 24px; }
   .keys { padding-bottom: 72px; }
   .keys-panel { grid-template-columns: 1fr; padding: 0 28px 36px; gap: 28px; }
   .keys-copy { padding-top: 0; }
-  .keys-phone { width: min(80%, 260px); order: -1; }
+  .keys-phone { width: min(78%, 260px); order: -1; margin-top: -30%; }
   .vision { padding-bottom: 72px; }
   .vision-copy { margin-bottom: 32px; }
   .setup { padding-bottom: 72px; }
